@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Navo</string>
+    <string name="title_activity_main">Navo</string>
+    <string name="package_name">uz.navo.player</string>
+    <string name="custom_url_scheme">uz.navo.player</string>
+</resources>

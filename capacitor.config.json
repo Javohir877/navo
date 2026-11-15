@@ -1,0 +1,10 @@
+{
+  "appId": "uz.navo.player",
+  "appName": "Navo",
+  "webDir": "www",
+  "backgroundColor": "#07070d",
+  "android": {
+    "backgroundColor": "#07070d",
+    "allowMixedContent": false
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "name": "navo",
+  "productName": "Navo",
+  "version": "1.0.0",
+  "description": "Navo — chiroyli, blurli musiqa pleyeri (Windows + Android)",
+  "main": "electron/main.js",
+  "author": "Navo",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "postinstall": "node scripts/copy-vendor.js",
+    "start": "electron .",
+    "icons": "electron scripts/make-icons.js",
+    "build:exe": "electron-builder --win",
+    "cap:sync": "npx cap sync android",
+    "build:apk": "npx cap sync android && cd android && gradlew.bat assembleDebug"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "music-metadata": "^11.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0",
+    "jsmediatags": "^3.9.7"
+  },
+  "build": {
+    "appId": "uz.navo.player",
+    "productName": "Navo",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "www/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Navo",
+      "artifactName": "Navo-Setup-${version}.exe",
+      "include": "build/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "Navo-${version}-portable.exe"
+    }
+  },
+  "allowScripts": {
+    "electron@38.8.6": true,
+    "ffmpeg-static@5.3.0": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

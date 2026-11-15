@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Navo — premium musiqa pleyeri</title>
+<meta name="description" content="Navo — barcha formatlarni o'ynaydigan, bass bilan sinxron effektli, bepul musiqa pleyeri. Windows va Android uchun yuklab oling.">
+<meta name="theme-color" content="#07070d">
+<meta property="og:title" content="Navo — musiqangizni his qiling">
+<meta property="og:description" content="Barcha formatlar, bass bilan sinxron effektlar, Slowed + Reverb, qo'shiq matni. Windows va Android uchun bepul.">
+<meta property="og:image" content="img/player.jpg">
+<link rel="icon" href="img/logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></div>
+
+<header class="nav">
+  <a class="brand" href="#top"><img src="img/logo.svg" alt=""><span>Navo</span></a>
+  <nav>
+    <a href="#features">Imkoniyatlar</a>
+    <a href="#download">Yuklab olish</a>
+    <a href="#install">O'rnatish</a>
+    <a href="#faq">Savollar</a>
+  </nav>
+  <a class="btn btn-small" href="#download">Yuklab olish</a>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-text">
+      <span class="pill"><i></i>v1.0 · Windows va Android uchun bepul</span>
+      <h1>Musiqangizni<br><span class="grad">his qiling.</span></h1>
+      <p class="lead">Navo — barcha formatlarni o'ynaydigan, har bir bass zarbasi bilan birga "nafas oladigan" premium musiqa pleyeri. Reklama yo'q, ro'yxatdan o'tish yo'q.</p>
+      <div class="cta">
+        <a class="btn btn-primary" id="mainDl" href="https://github.com/Javohir877/navo/releases/latest/download/Navo-Setup.exe">
+          <svg viewBox="0 0 24 24"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg>
+          <span><b id="mainDlLabel">Windows uchun yuklab olish</b><small id="mainDlSub">Windows 10 / 11 · 119 MB</small></span>
+        </a>
+        <a class="btn btn-ghost" id="altDl" href="https://github.com/Javohir877/navo/releases/latest/download/Navo.apk">
+          <svg viewBox="0 0 24 24"><path d="M17.6 9.5 19.3 6.6a.5.5 0 0 0-.9-.5l-1.7 3A9.7 9.7 0 0 0 12 8a9.7 9.7 0 0 0-4.7 1.1l-1.7-3a.5.5 0 0 0-.9.5l1.7 2.9A8.9 8.9 0 0 0 2 16.5h20a8.9 8.9 0 0 0-4.4-7zM7.5 14a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm9 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+          <span><b id="altDlLabel">Android (APK)</b><small id="altDlSub">Android 6+ · 3 MB</small></span>
+        </a>
+      </div>
+      <ul class="trust">
+        <li>Ochiq kodli</li><li>Internetsiz ishlaydi</li><li>Reklamasiz</li>
+      </ul>
+    </div>
+
+    <div class="hero-shot">
+      <div class="rings" aria-hidden="true"><i></i><i></i><i></i></div>
+      <figure class="laptop"><img src="img/library.jpg" alt="Navo kutubxonasi — Windows" width="1800" height="1125"></figure>
+      <figure class="phone"><img src="img/mobile-player.jpg" alt="Navo pleyeri — Android" width="525" height="1125"></figure>
+    </div>
+  </section>
+
+  <!-- FORMATS -->
+  <section class="formats" aria-label="Qo'llab-quvvatlanadigan formatlar">
+    <div class="marquee"><div class="track" id="fmtTrack"></div></div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section" id="features">
+    <div class="head">
+      <span class="kicker">Imkoniyatlar</span>
+      <h2>Oddiy pleyer emas.</h2>
+      <p>Musiqa tinglashni tajribaga aylantiradigan hamma narsa — bitta yengil ilovada.</p>
+    </div>
+    <div class="grid">
+      <article class="card c-wide">
+        <div class="ico"></div>
+        <h3>Bass bilan sinxron effektlar</h3>
+        <p>Navo qo'shiqni oldindan tahlil qiladi va har bir 808 zarbasini millisekundigacha topadi. Drop kelganda — to'lqinlar muqova ortidan otilib chiqadi, ekran chaqnaydi. Sokin qismlarda esa jim turadi.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>Uslubni o'zi taniydi</h3>
+        <p>Phonk, rep, elektron yoki sokin musiqa — har biriga o'z effekti. Tempi va bassiga qarab avtomatik.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>Slowed + Reverb, 8D</h3>
+        <p>Istalgan qo'shiqni bir tugma bilan sekinlashtiring, aks-sado qo'shing yoki ovozni boshingiz atrofida aylantiring.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>Qo'shiq matni</h3>
+        <p>Karaoke uslubida — matn qo'shiq bilan birga yuradi. Slowed versiyalarda ham vaqt avtomatik moslashadi.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>Barcha formatlar</h3>
+        <p>MP3, FLAC, WAV, M4A, OGG, OPUS — hamda Windows'da WMA, APE, AIFF, ALAC va DSD ham.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>Muqovalar o'zi topiladi</h3>
+        <p>Rasmi yo'q qo'shiqlarga muqova internetdan avtomatik qo'yiladi. Xohlasangiz o'zingiz rasm va nom bering.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>Top va statistika</h3>
+        <p>Eng ko'p tinglaganlaringiz, jami tinglash vaqti va sevimli ijrochingiz — hammasi bir joyda.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>10 polosali ekvalayzer</h3>
+        <p>Bass, Pop, Rok, Jazz va boshqa tayyor sozlamalar yoki o'zingizning ovozingiz.</p>
+      </article>
+      <article class="card">
+        <div class="ico"></div>
+        <h3>Uyqu taymeri</h3>
+        <p>Musiqa sekin pasayib, o'zi to'xtaydi. 15 daqiqadan 1.5 soatgacha yoki qo'shiq oxirida.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- SHOWCASE -->
+  <section class="section showcase">
+    <div class="show-text">
+      <span class="kicker">To'liq ekran rejimi</span>
+      <h2>Har zarba — <span class="grad">BAMM.</span></h2>
+      <p>Muqova bass bilan sakraydi, orqasidan yorug' to'lqinlar tarqaladi, nurlar aylanadi. Hammasi videokartada ishlaydi — monitoringiz 60, 144 yoki 240 Hz bo'lsa ham silliq.</p>
+      <ul class="ticks">
+        <li>Drop'larni o'zi topadi</li>
+        <li>Monitoringiz chastotasida ishlaydi</li>
+        <li>Sust kompyuter uchun "yengil rejim"</li>
+      </ul>
+    </div>
+    <figure class="show-img"><img src="img/player.jpg" alt="Navo to'liq ekran pleyeri" loading="lazy" width="1800" height="1125"></figure>
+  </section>
+
+  <section class="section duo">
+    <figure><img src="img/settings.jpg" alt="Sozlamalar va audio effektlar" loading="lazy" width="1800" height="1125"><figcaption>Ekvalayzer, audio effektlar va effekt uslubi</figcaption></figure>
+    <figure class="tall"><img src="img/mobile.jpg" alt="Navo Android" loading="lazy" width="525" height="1125"><figcaption>Android'da ham xuddi shunday</figcaption></figure>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section class="section" id="download">
+    <div class="head">
+      <span class="kicker">Yuklab olish</span>
+      <h2>Bepul. Hozirning o'zida.</h2>
+      <p>Versiya <b id="ver">1.0.0</b> · <a href="https://github.com/Javohir877/navo/releases" target="_blank" rel="noopener">barcha versiyalar</a></p>
+    </div>
+    <div class="dl-grid">
+      <article class="dl rec">
+        <span class="tag">Tavsiya etiladi</span>
+        <div class="dl-ico win"><svg viewBox="0 0 24 24"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg></div>
+        <h3>Windows</h3>
+        <p>O'rnatuvchi · ish stoli yorlig'i va musiqa fayllarini to'g'ridan-to'g'ri Navo'da ochish ("Open with").</p>
+        <a class="btn btn-primary wide" href="https://github.com/Javohir877/navo/releases/latest/download/Navo-Setup.exe">Yuklab olish · .exe</a>
+        <small>Windows 10 / 11 (64-bit) · ~119 MB</small>
+      </article>
+      <article class="dl">
+        <div class="dl-ico win2"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H4zM2 18h20v2H2z"/></svg></div>
+        <h3>Windows portativ</h3>
+        <p>O'rnatishsiz — fleshkadan yoki istalgan papkadan ishga tushadi.</p>
+        <a class="btn btn-ghost wide" href="https://github.com/Javohir877/navo/releases/latest/download/Navo-portable.exe">Yuklab olish · .exe</a>
+        <small>Windows 10 / 11 (64-bit) · ~110 MB</small>
+      </article>
+      <article class="dl">
+        <div class="dl-ico and"><svg viewBox="0 0 24 24"><path d="M17.6 9.5 19.3 6.6a.5.5 0 0 0-.9-.5l-1.7 3A9.7 9.7 0 0 0 12 8a9.7 9.7 0 0 0-4.7 1.1l-1.7-3a.5.5 0 0 0-.9.5l1.7 2.9A8.9 8.9 0 0 0 2 16.5h20a8.9 8.9 0 0 0-4.4-7zM7.5 14a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm9 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg></div>
+        <h3>Android</h3>
+        <p>Telefon uchun APK · fonda ijro, bildirishnomada boshqaruv tugmalari.</p>
+        <a class="btn btn-ghost wide" href="https://github.com/Javohir877/navo/releases/latest/download/Navo.apk">Yuklab olish · .apk</a>
+        <small>Android 6.0+ · ~3 MB</small>
+      </article>
+    </div>
+  </section>
+
+  <!-- INSTALL -->
+  <section class="section" id="install">
+    <div class="head">
+      <span class="kicker">O'rnatish</span>
+      <h2>Bir daqiqalik ish.</h2>
+    </div>
+    <div class="steps">
+      <div class="step-col">
+        <h3>Windows</h3>
+        <ol>
+          <li><b>Navo-Setup.exe</b> faylini yuklab oling va ishga tushiring.</li>
+          <li>Agar "Windows protected your PC" oynasi chiqsa — <b>More info</b> → <b>Run anyway</b> ni bosing. Bu ilova hali raqamli sertifikat bilan imzolanmagani uchun chiqadi.</li>
+          <li>O'rnatish tugagach, ish stolidagi <b>Navo</b> yorlig'ini oching va musiqangizni qo'shing.</li>
+        </ol>
+      </div>
+      <div class="step-col">
+        <h3>Android</h3>
+        <ol>
+          <li><b>Navo.apk</b> faylini telefoningizga yuklab oling.</li>
+          <li>Faylni oching. So'ralsa, brauzer yoki fayl menejeriga <b>"Noma'lum ilovalarni o'rnatish"</b> ga ruxsat bering.</li>
+          <li>Play Protect tekshiruv taklif qilsa — <b>O'rnatish</b> ni tanlang. Tayyor!</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section" id="faq">
+    <div class="head"><span class="kicker">Savollar</span><h2>Ko'p so'raladigan savollar</h2></div>
+    <div class="faq">
+      <details open><summary>Navo bepulmi?</summary><p>Ha, butunlay bepul. Reklama yo'q, obuna yo'q, ro'yxatdan o'tish ham shart emas.</p></details>
+      <details><summary>Internet kerakmi?</summary><p>Yo'q. Musiqangiz kompyuter yoki telefoningizdan ijro etiladi. Internet faqat muqova va qo'shiq matnini topish uchun ishlatiladi — buni sozlamalarda o'chirib qo'yish mumkin.</p></details>
+      <details><summary>Qaysi formatlarni o'ynaydi?</summary><p>Windows'da: MP3, FLAC, WAV, M4A/AAC, OGG, OPUS, WMA, APE, WavPack, AIFF, ALAC, DSD (DSF/DFF), AC3 va boshqalar. Android'da: MP3, FLAC, WAV, M4A/AAC, OGG va OPUS.</p></details>
+      <details><summary>Nega Windows "noma'lum noshir" deydi?</summary><p>Raqamli imzo sertifikati pullik bo'lgani uchun ilova hozircha imzolanmagan. Kod to'liq ochiq — uni GitHub'da ko'rishingiz mumkin.</p></details>
+      <details><summary>Kompyuterim kuchsiz, qotmaydimi?</summary><p>Barcha effektlar videokartada ishlaydi. Juda sust qurilmalarda Navo o'zi "yengil rejim"ga o'tadi, xohlasangiz sozlamalardan effektlarni o'chirishingiz mumkin.</p></details>
+    </div>
+  </section>
+
+  <section class="final">
+    <img src="img/logo.svg" alt="">
+    <h2>Navo bilan tinglang.</h2>
+    <a class="btn btn-primary" href="#download">Yuklab olish</a>
+  </section>
+</main>
+
+<footer>
+  <span>© <span id="yr">2026</span> Navo</span>
+  <a href="https://github.com/Javohir877/navo" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+android/app/build/
+android/.gradle/
+android/local.properties
+# Release signing key — keep a private backup, never publish it
+android/navo-release.jks
+android/keystore.properties
+build-exe.log
+.claude/
+android/app/src/main/assets/public/
+android/capacitor-cordova-android-plugins/build/
