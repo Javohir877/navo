@@ -875,6 +875,34 @@ async function prepareBeats(t) {
 }
 audio.addEventListener('seeked', seekBeat);
 
+
+/* ============================================================
+   Phone effect mode: phones choked on the full-screen layers, so on
+   Android only the visible cover moves (one small element) and a hit
+   adds a thin ring around it. Nothing full-screen, no blur, no glow.
+   ============================================================ */
+const PHONE_FX = !IS_DESKTOP;
+if (PHONE_FX) document.documentElement.classList.add('phone-fx');
+function visibleCover() {
+  if ($('#fullPlayer').classList.contains('open')) return ly.open ? null : fpArtEl;
+  const m = $('.m-now .bass-art');
+  if (m && m.offsetParent) { const r = m.getBoundingClientRect(); if (r.bottom > 0 && r.top < innerHeight - 150) return m; }
+  return $('.p-art');
+}
+let phoneCover = null;
+function phonePulse(p) {
+  const el = visibleCover();
+  if (phoneCover && phoneCover !== el) phoneCover.style.transform = '';
+  phoneCover = el;
+  if (el) el.style.transform = p > 0.002 ? `scale(${(1 + p * 0.04).toFixed(3)})` : '';
+}
+function phoneBoom(s, mega) {
+  const el = visibleCover();
+  if (!el) return;
+  const ring = el.parentElement && el.parentElement.querySelector('.boom-ring');
+  if (ring) { stopAnims(ring); ring.animate(RING_KF, { duration: mega ? 700 : 520, easing: 'cubic-bezier(.15,.75,.3,1)' }); }
+}
+
 function bassPulse(dt, ts) {
   const e = bassEnergy();
   bassAvg += (e - bassAvg) * lerpK(dt, 1400);       // long-term average (song loudness)
@@ -917,6 +945,7 @@ function bassPulse(dt, ts) {
 function applyPulse(p, lv = 0) {
   if (Math.abs(p - lastPulseOut) < 0.002) return;
   lastPulseOut = p;
+  if (PHONE_FX) { phonePulse(p); return; }
   const s = p > 0.002 ? `scale(${(1 + p * 0.055).toFixed(4)})` : '';
   Array.prototype.forEach.call(bassArts, el => { el.style.transform = s; });
   fpArtEl.style.transform = p > 0.002 ? `scale(${(1 + p * 0.04).toFixed(4)})` : '';
@@ -940,6 +969,7 @@ function boom(strength, mega = false) {
   const s = Math.max(0.35, strength);
   boomMega = mega;
   document.documentElement.dataset.booms = ++boomCount;
+  if (PHONE_FX) { phoneBoom(s, mega); return; }
   const fpOpen = $('#fullPlayer').classList.contains('open');
   // shock rings around every visible cover
   $$('.boom-ring').forEach(r => {
@@ -1050,6 +1080,7 @@ function fxBurst(s) {
 }
 // Calm music: a slow, soft ripple from behind the cover instead of a BAMM
 function gentleRipple(s) {
+  if (PHONE_FX) { phoneBoom(s * 0.5, false); return; }
   const o = fxOrigin();
   const far = Math.hypot(Math.max(o.x, innerWidth - o.x), Math.max(o.y, innerHeight - o.y));
   fxWave(o.fp ? poolFull : poolMain, o, far * 0.8, 0.35 + s * 0.3, 0, 'soft', 2600);
@@ -1088,7 +1119,7 @@ function tick(ts) {
   const fxMoving = fxDraw(dt);
 
   // spectrum bars: ~30 fps is plenty
-  if (S.viz) {   // every frame: runs at the monitor's refresh rate (60/120/144/240 Hz)
+  if (S.viz && (!PHONE_FX || ts - lastDraw >= 32)) {   // desktop: every frame (monitor Hz); phone: ~30 fps
     vizDt = Math.min(64, ts - lastDraw);
     lastDraw = ts;
     if (analyser && S.playing) analyser.getByteFrequencyData(freqData);
@@ -1107,7 +1138,7 @@ function tick(ts) {
 let vizDt = 16;
 function drawViz(cv, ts) {
   const kUp = lerpK(vizDt, 28), kDown = lerpK(vizDt, 140);
-  const dpr = Math.min(1.25, window.devicePixelRatio || 1);
+  const dpr = PHONE_FX ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
   const w = cv.clientWidth, h = cv.clientHeight;
   if (!w || !h) return false;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }

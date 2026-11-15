@@ -828,3 +828,13 @@ h1, h2, h3, .title-wrap h1, .brand b, .fp-tt h2, .np-meta h3, .shelf-head h3, .m
   .search input { font-weight: 500; }
 }
 @media (max-width: 820px) { .tab span { font-size: 10px; white-space: nowrap; letter-spacing: 0; } }
+
+/* ============================================================
+   Phone effect mode: no full-screen / blurred / glowing layers
+   ============================================================ */
+.phone-fx #fxLayer, .phone-fx #fpFxLayer, .phone-fx #edgeGlow, .phone-fx .fp-rays, .phone-fx .bass-glow,
+.phone-fx .fp-glow, .phone-fx .art-clip, .phone-fx .fp-flash { display: none !important; }
+.phone-fx .fp-bg-art, .phone-fx .fp-body, .phone-fx .bass-art, .phone-fx .fp-art { will-change: auto; }
+.phone-fx .fp-art { box-shadow: 0 30px 60px -24px rgba(0, 0, 0, .8); }
+.phone-fx .boom-ring { box-shadow: none; border-width: 2px; }
+.phone-fx .np-art, .phone-fx .p-art { box-shadow: 0 10px 20px -10px rgba(0, 0, 0, .7); }
