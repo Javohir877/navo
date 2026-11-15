@@ -299,35 +299,25 @@ async function fetchImage(url) {
   if (!r.ok) return null;
   return imageToDataUrl(Buffer.from(await r.arrayBuffer()));
 }
-async function findCover(title, artist) {
-  const t = cleanTitle(title), a = String(artist || '').split(/,|&| x | feat/i)[0].trim();
-  if (!t) return null;
-  const term = encodeURIComponent(`${t} ${a}`.trim());
-  try {
-    const r = await net.fetch(`https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=5`);
-    const j = await r.json();
-    const hit = (j.results || []).find(x => similar(t, x.trackName) >= 0.6 && (!a || similar(a, x.artistName) >= 0.5));
-    if (hit && hit.artworkUrl100) {
-      const img = await fetchImage(hit.artworkUrl100.replace(/\/\d+x\d+bb\./, '/600x600bb.'));
-      if (img) return img;
-    }
-  } catch { /* offline or blocked */ }
-  try {
-    const r = await net.fetch(`https://api.deezer.com/search?q=${term}&limit=5`);
-    const j = await r.json();
-    const hit = (j.data || []).find(x => similar(t, x.title) >= 0.6 && (!a || similar(a, x.artist && x.artist.name) >= 0.5));
-    if (hit && hit.album && hit.album.cover_xl) return await fetchImage(hit.album.cover_xl);
-  } catch { /* */ }
-  return null;
-}
-ipcMain.handle('find-cover', (_e, title, artist) => findCover(title, artist));
+// Cover images for the renderer: only from the music catalogs the cover search uses.
+const IMG_HOSTS = ['mzstatic.com', 'dzcdn.net', 'coverartarchive.org', 'archive.org'];
+const hostOk = (h, list) => list.some(d => h === d || h.endsWith('.' + d));
+ipcMain.handle('fetch-image', async (_e, url) => {
+  const u = new URL(url);
+  if (u.protocol !== 'https:' || !hostOk(u.hostname, IMG_HOSTS)) throw new Error('blocked host');
+  try { return await fetchImage(u.toString()); } catch { return null; }
+});
+// Opens a Google Images search in the user's browser (nothing else may be opened this way).
+ipcMain.handle('open-search', (_e, q, images) => {
+  shell.openExternal('https://www.google.com/search?' + (images ? 'tbm=isch&' : '') + 'q=' + encodeURIComponent(String(q || '').slice(0, 200)));
+});
 
 // Small JSON fetch for the renderer, limited to the public music APIs the app uses.
-const API_HOSTS = new Set(['lrclib.net', 'itunes.apple.com', 'api.deezer.com']);
+const API_HOSTS = new Set(['lrclib.net', 'itunes.apple.com', 'api.deezer.com', 'musicbrainz.org', 'api.lyrics.ovh']);
 ipcMain.handle('http-json', async (_e, url) => {
   const u = new URL(url);
   if (u.protocol !== 'https:' || !API_HOSTS.has(u.hostname)) throw new Error('blocked host');
-  const r = await net.fetch(u.toString(), { headers: { 'User-Agent': 'Navo/1.0 (music player)' } });
+  const r = await net.fetch(u.toString(), { headers: { 'User-Agent': 'Navo/1.0 ( https://github.com/Javohir877/navo )', Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
   return r.ok ? r.json() : null;
 });
 
@@ -435,6 +425,7 @@ async function devScreenshots() {
     fs.writeFileSync(`${pfx}-${name}.png`, (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
   };
   win.webContents.setBackgroundThrottling(false);
+  win.webContents.setAudioMuted(true); // test runs must never make a sound
   const js = code => win.webContents.executeJavaScript(code, true).catch(e => console.error(e));
   win.webContents.on('console-message', e => { if (e.level === 'error' || e.level === 'warning') console.log('CONSOLE', e.level, e.message); });
   await wait(6000);
@@ -446,6 +437,32 @@ async function devScreenshots() {
       console.log('CODEC', i, st, '| codec file:', fs.existsSync(ffLocal()));
       if (/t=0:0[3-9]/.test(st)) break;
     }
+    app.quit(); return;
+  }
+  if (process.env.NAVO_ONLINE) {
+    // online cover / lyrics sources check
+    win.setSize(1320, 860);
+    const r = await js(`(async () => { const { coverCandidates, fetchLyrics, findCoverOnline } = window.__navo;
+      const c = await coverCandidates('Metamorphosis', 'Interworld');
+      const c2 = await coverCandidates('Sog\\'inib', 'Shahzoda');
+      const l1 = await fetchLyrics({ title: 'Yellow', artist: 'Coldplay', duration: 266 });
+      const l2 = await fetchLyrics({ title: 'Sog\\'inib', artist: '', duration: 0 });
+      const l3 = await fetchLyrics({ title: 'zzqx nonexistent song', artist: 'nobody here', duration: 100 });
+      const auto = await findCoverOnline({ title: 'Metamorphosis', artist: 'Interworld' });
+      return JSON.stringify({ covers: c.map(x => x.src + (x.ok ? '+' : '-')), uz: c2.slice(0, 6).map(x => x.src + (x.ok ? '+' : '-') + ' ' + x.artist), l1: l1.src + ' ' + !!l1.synced, l2: (l2.src || 'none') + ' ' + !!l2.synced, l3, auto: !!auto && auto.slice(0, 30) });
+    })()`);
+    console.log('ONLINE', r);
+    await js(`__navo.openEdit(__navo.S.order[0]); document.querySelector('#editTitle').value = 'Metamorphosis'; document.querySelector('#editArtist').value = 'Interworld'; document.querySelector('#editFindArt').click()`);
+    await wait(9000);
+    await js(`document.querySelector('#coverGrid .cp-item:not(.sk)')?.click()`);
+    await wait(2500);
+    await shot('cover-pick');
+    await js(`(async () => { const n = window.__navo; n.closeEdit(); await n.loadIndex(0, false); n.openFull(); n.toggleLyrics(true); })()`);
+    await wait(9000);
+    await shot('ly-none');
+    await js(`__navo.openLyEdit()`);
+    await wait(800);
+    await shot('ly-edit');
     app.quit(); return;
   }
   if (process.env.NAVO_SITE) {

@@ -251,7 +251,7 @@
     <div class="lyrics" id="lyrics">
       <div class="ly-inner" id="lyInner"></div>
       <div class="ly-msg" id="lyMsg"></div>
-      <span class="ly-credit">LRCLIB</span>
+      <button class="ly-credit" title="Matnni tahrirlash">LRCLIB</button>
     </div>
     <div class="fp-art-wrap">
       <div class="fp-rays"></div>
@@ -319,12 +319,33 @@
         <p class="edit-note">O'zgarishlar faqat Navo ichida saqlanadi — asl faylingiz o'zgarmaydi.</p>
       </div>
     </div>
+    <div id="coverPick" class="cover-pick hidden">
+      <div class="cp-head">
+        <span id="coverNote"></span>
+        <button class="btn btn-ghost sm" id="coverGoogle"><svg class="i"><use href="#i-search"/></svg>Google rasmlar</button>
+      </div>
+      <div id="coverGrid" class="cp-grid"></div>
+      <p class="edit-note">Spotify, Google yoki boshqa saytdagi rasmni nusxalab shu oynada Ctrl+V bosing yoki rasm faylini shu yerga tashlang.</p>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="editCancel">Bekor qilish</button>
       <button class="btn btn-primary" id="editSave">Saqlash</button>
     </div>
   </div>
   <input type="file" id="artInput" accept="image/*" hidden>
+</div>
+
+<div id="lyModal" class="modal hidden">
+  <div class="modal-card glass">
+    <h3>Qo'shiq matni</h3>
+    <textarea id="lyText" class="ly-text" spellcheck="false" placeholder="Matnni shu yerga qo'ying. Vaqtli .lrc formati ([01:23.45] qator) ham ishlaydi — u holda matn qo'shiq bilan birga yuradi."></textarea>
+    <p class="edit-note">Matn faqat Navo ichida saqlanadi. Bo'sh qoldirib saqlasangiz, matn o'chiriladi va internetdan qayta qidiriladi.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="lyGoogle" style="margin-right:auto"><svg class="i"><use href="#i-search"/></svg>Google</button>
+      <button class="btn btn-ghost" id="lyCancel">Bekor qilish</button>
+      <button class="btn btn-primary" id="lySave">Saqlash</button>
+    </div>
+  </div>
 </div>
 
 <div id="menu" class="glass menu hidden"></div>

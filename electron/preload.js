@@ -3,12 +3,14 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('navo', {
   platform: 'desktop',
+  devTest: !!(process.env && process.env.NAVO_SHOT),
   pickFiles: () => ipcRenderer.invoke('pick-files'),
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   parsePaths: paths => ipcRenderer.invoke('parse-paths', paths),
   launchPaths: () => ipcRenderer.invoke('launch-paths'),
   gpuInfo: () => ipcRenderer.invoke('gpu-info'),
-  findCover: (title, artist) => ipcRenderer.invoke('find-cover', title, artist),
+  fetchImage: url => ipcRenderer.invoke('fetch-image', url),
+  openSearch: (q, images) => ipcRenderer.invoke('open-search', q, !!images),
   httpJson: url => ipcRenderer.invoke('http-json', url),
   setPlaying: playing => ipcRenderer.send('play-state', !!playing),
   onMedia: cb => ipcRenderer.on('media', (_e, a) => cb(a)),

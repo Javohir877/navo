@@ -1670,28 +1670,70 @@ function similar(a, b) {
   let hit = 0; for (const w of A) if (B.has(w)) hit++;
   return hit / Math.min(A.size, B.size);
 }
-async function mobileFindCover(title, artist) {
+const firstArtist = a => String(a || '').split(/,|&| x | feat/i)[0].trim();
+// Image URL -> data URL (desktop: main process, phone: native HTTP; both skip CORS)
+async function fetchImageData(url) {
+  if (IS_DESKTOP) return NAVO.fetchImage(url);
   const H = window.capacitorExports && window.capacitorExports.CapacitorHttp;
   if (!H) return null;
-  const t = cleanTitle(title), a = String(artist || '').split(/,|&| x | feat/i)[0].trim();
-  if (!t) return null;
+  const r = await H.get({ url, responseType: 'blob', connectTimeout: 8000, readTimeout: 12000 });
+  return r.status === 200 && r.data ? 'data:image/jpeg;base64,' + r.data : null;
+}
+// MusicBrainz asks for at most one request per second
+let mbLast = 0;
+async function mbGate() { const w = mbLast + 1100 - Date.now(); mbLast = Date.now() + Math.max(0, w); if (w > 0) await sleep(w); }
+
+/* Cover candidates from several catalogs, best match first.
+   Apple Music (the catalog Shazam shows covers from; US + RU stores, which also
+   carry most Uzbek/CIS releases), Deezer, and MusicBrainz / Cover Art Archive. */
+async function coverCandidates(title, artist, { deep = true } = {}) {
+  const t = cleanTitle(title), a = firstArtist(artist);
+  if (!t) return [];
   const term = encodeURIComponent(`${t} ${a}`.trim());
-  const img = async url => { const r = await H.get({ url, responseType: 'blob', connectTimeout: 8000, readTimeout: 10000 }); return r.status === 200 && r.data ? 'data:image/jpeg;base64,' + r.data : null; };
-  try {
-    const r = await H.get({ url: `https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=5`, responseType: 'json', connectTimeout: 8000, readTimeout: 8000 });
-    const j = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-    const hit = (j.results || []).find(x => similar(t, x.trackName) >= 0.6 && (!a || similar(a, x.artistName) >= 0.5));
-    if (hit && hit.artworkUrl100) { const d = await img(hit.artworkUrl100.replace(/\/\d+x\d+bb\./, '/600x600bb.')); if (d) return d; }
-  } catch { /* offline */ }
-  try {
-    const r = await H.get({ url: `https://api.deezer.com/search?q=${term}&limit=5`, responseType: 'json', connectTimeout: 8000, readTimeout: 8000 });
-    const j = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-    const hit = (j.data || []).find(x => similar(t, x.title) >= 0.6 && (!a || similar(a, x.artist && x.artist.name) >= 0.5));
-    if (hit && hit.album && hit.album.cover_xl) return await img(hit.album.cover_xl);
-  } catch { /* */ }
+  const out = [];
+  const add = (src, tt, aa, thumb, full, bonus = 0) => {
+    if (!full) return;
+    const st = similar(t, tt), sa = a ? similar(a, aa) : 0.5;
+    out.push({ src, title: tt, artist: aa, thumb: thumb || full, full, ok: st >= 0.6 && (!a || sa >= 0.5), s: st * 2 + sa + bonus });
+  };
+  const it = c => httpJson(`https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=8&country=${c}`).then(j => {
+    for (const x of (j && j.results) || []) if (x.artworkUrl100)
+      add('Apple Music', x.trackName, x.artistName, x.artworkUrl100.replace(/\/\d+x\d+bb\./, '/200x200bb.'), x.artworkUrl100.replace(/\/\d+x\d+bb\./, '/600x600bb.'), 0.06);
+  }).catch(() => {});
+  const dz = httpJson(`https://api.deezer.com/search?q=${term}&limit=8`).then(j => {
+    for (const x of (j && j.data) || []) if (x.album) add('Deezer', x.title, x.artist && x.artist.name, x.album.cover_medium, x.album.cover_xl, 0.03);
+  }).catch(() => {});
+  const jobs = [it('US'), it('RU'), dz];
+  if (deep) jobs.push((async () => {
+    await mbGate();
+    const q = `recording:"${t.replace(/"/g, '')}"` + (a ? ` AND artist:"${a.replace(/"/g, '')}"` : '');
+    const url = `https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(q)}&fmt=json&limit=6`;
+    let j = await httpJson(url).catch(() => null);
+    if (!j) { await mbGate(); j = await httpJson(url).catch(() => null); }   // MusicBrainz is often briefly busy (503)
+    const seen = new Set();
+    for (const r of (j && j.recordings) || []) {
+      const ar = (r['artist-credit'] || []).map(c => c.name).join(', ');
+      for (const rel of (r.releases || []).slice(0, 2)) {
+        if (seen.has(rel.id) || seen.size >= 5) continue;
+        seen.add(rel.id);
+        add('MusicBrainz', r.title, ar, `https://coverartarchive.org/release/${rel.id}/front-250`, `https://coverartarchive.org/release/${rel.id}/front-500`);
+      }
+    }
+  })().catch(() => {}));
+  await Promise.all(jobs);
+  const seen = new Set();
+  return out.sort((x, y) => (y.ok - x.ok) || (y.s - x.s)).filter(c => !seen.has(c.full) && seen.add(c.full));
+}
+// Automatic lookup: fast catalogs first; MusicBrainz only when they have nothing
+async function findCoverOnline(t) {
+  let list = await coverCandidates(t.title, t.artist, { deep: false });
+  if (!list.some(c => c.ok)) list = await coverCandidates(t.title, t.artist, { deep: true });
+  for (const c of list.filter(c => c.ok).slice(0, 3)) {
+    const d = await fetchImageData(c.full).catch(() => null);
+    if (d) return d;
+  }
   return null;
 }
-const findCoverOnline = t => IS_DESKTOP ? NAVO.findCover(t.title, t.artist) : mobileFindCover(t.title, t.artist);
 
 async function setTrackArt(t, dataUrl, prefix) {
   const { full, thumb } = await makeArt(dataUrl);
@@ -1740,20 +1782,50 @@ async function httpJson(url) {
   if (r.status !== 200) return null;
   return typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
 }
-async function fetchLyrics(t) {
-  const title = cleanTitle(t.title), artist = String(t.artist || '').split(/,|&| x | feat/i)[0].trim();
-  if (!title) return { none: true };
+function lrclibFind(title, artist, dur) {
   const ok = x => x && !x.instrumental && (x.syncedLyrics || x.plainLyrics) &&
     similar(title, x.trackName) >= 0.6 && (!artist || similar(artist, x.artistName) >= 0.5);
-  let cands = [];
-  try { cands = ((await httpJson(`https://lrclib.net/api/search?q=${encodeURIComponent(`${title} ${artist}`.trim())}`)) || []).filter(ok); } catch { /* */ }
-  if (!cands.length) {
-    try { cands = ((await httpJson(`https://lrclib.net/api/search?track_name=${encodeURIComponent(title)}`)) || []).filter(ok); } catch { /* */ }
+  return (async () => {
+    let cands = [];
+    try { cands = ((await httpJson(`https://lrclib.net/api/search?q=${encodeURIComponent(`${title} ${artist}`.trim())}`)) || []).filter(ok); } catch { /* */ }
+    if (!cands.length) {
+      try { cands = ((await httpJson(`https://lrclib.net/api/search?track_name=${encodeURIComponent(title)}`)) || []).filter(ok); } catch { /* */ }
+    }
+    cands.sort((a, b) => (!!b.syncedLyrics - !!a.syncedLyrics) || (Math.abs((a.duration || 0) - dur) - Math.abs((b.duration || 0) - dur)));
+    return cands[0] || null;
+  })();
+}
+// iTunes knows the official spelling of a song (Latin vs Cyrillic, missing artist tag…)
+async function itunesIdentify(title, artist, dur) {
+  for (const c of ['US', 'RU']) {
+    const j = await httpJson(`https://itunes.apple.com/search?term=${encodeURIComponent(`${title} ${artist}`.trim())}&media=music&entity=song&limit=8&country=${c}`).catch(() => null);
+    const hit = ((j && j.results) || []).find(x => similar(title, x.trackName) >= 0.6 &&
+      (!artist || similar(artist, x.artistName) >= 0.5 || (dur && Math.abs(x.trackTimeMillis / 1000 - dur) < 3)));
+    if (hit) return { title: cleanTitle(hit.trackName), artist: firstArtist(hit.artistName) };
   }
+  return null;
+}
+async function fetchLyrics(t) {
+  const title = cleanTitle(t.title), artist = firstArtist(t.artist);
+  if (!title) return { none: true };
   const dur = t.duration || audio.duration || 0;
-  cands.sort((a, b) => (!!b.syncedLyrics - !!a.syncedLyrics) || (Math.abs((a.duration || 0) - dur) - Math.abs((b.duration || 0) - dur)));
-  const best = cands[0];
-  return best ? { synced: best.syncedLyrics || null, plain: best.plainLyrics || null, srcDur: best.duration || 0 } : { none: true };
+  const names = [{ title, artist }];
+  let best = await lrclibFind(title, artist, dur);
+  if (!best) {
+    const id = await itunesIdentify(title, artist, dur);
+    if (id && (normTxt(id.title) !== normTxt(title) || normTxt(id.artist) !== normTxt(artist))) {
+      names.push(id);
+      best = await lrclibFind(id.title, id.artist, dur);
+    }
+  }
+  if (best) return { synced: best.syncedLyrics || null, plain: best.plainLyrics || null, srcDur: best.duration || 0, src: 'LRCLIB' };
+  for (const n of names) {
+    if (!n.artist) continue;
+    const j = await httpJson(`https://api.lyrics.ovh/v1/${encodeURIComponent(n.artist)}/${encodeURIComponent(n.title)}`).catch(() => null);
+    const txt = j && typeof j.lyrics === 'string' ? j.lyrics.replace(/\r\n/g, '\n').replace(/^Paroles de la chanson.*\n/i, '').trim() : '';
+    if (txt) return { plain: txt, src: 'lyrics.ovh' };
+  }
+  return { none: true };
 }
 function parseLrc(text, scale) {
   const out = [];
@@ -1773,6 +1845,40 @@ function toggleLyrics(force) {
   if (ly.open) { loadLyrics(cur()); startLoop(); }
 }
 function lyMessage(msg) { $('#lyMsg').textContent = msg; }
+// Nothing found: let the user look it up on Google or paste the words themselves
+function lyNotFound(msg) {
+  $('#lyMsg').innerHTML = `<div class="ly-none"><b>${esc(msg)}</b><div class="ly-none-btns">
+    <button class="btn btn-ghost sm" data-ly="google"><svg class="i"><use href="#i-search"/></svg>Google'da qidirish</button>
+    <button class="btn btn-primary sm" data-ly="paste"><svg class="i"><use href="#i-edit"/></svg>Matnni qo'yish</button></div></div>`;
+}
+function lyGoogle() {
+  const t = cur(); if (!t) return;
+  const q = `${firstArtist(t.artist)} ${cleanTitle(t.title)} lyrics`.trim();
+  if (IS_DESKTOP) NAVO.openSearch(q, false); else window.open('https://www.google.com/search?q=' + encodeURIComponent(q), '_blank');
+  toast('Matnni nusxalab, Navo\'da «Matnni qo\'yish» ni bosing');
+}
+async function openLyEdit() {
+  const t = cur(); if (!t) return;
+  const rec = await DB.get('lyrics', t.id).catch(() => null);
+  $('#lyText').value = rec && rec.src === 'Siz' ? (rec.synced || rec.plain || '') : '';
+  $('#lyModal').dataset.id = t.id;
+  $('#lyModal').classList.remove('hidden');
+  setTimeout(() => $('#lyText').focus(), 50);
+}
+function closeLyEdit() { $('#lyModal').classList.add('hidden'); }
+async function saveLyEdit() {
+  const id = $('#lyModal').dataset.id, t = S.tracks.get(id);
+  const text = $('#lyText').value.replace(/\r\n/g, '\n').trim();
+  closeLyEdit();
+  if (!t) return;
+  if (!text) { await DB.del('lyrics', id).catch(() => {}); }
+  else {
+    const timed = /^\s*\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/m.test(text);
+    await DB.put('lyrics', timed ? { synced: text, src: 'Siz', at: Date.now() } : { plain: text, src: 'Siz', at: Date.now() }, id).catch(() => {});
+  }
+  if (ly.id === id) { ly.id = null; loadLyrics(t); }
+  toast(text ? 'Matn saqlandi ✓' : 'Matn o\'chirildi');
+}
 async function loadLyrics(t) {
   if (!t) return;
   if (ly.id === t.id) return;
@@ -1786,7 +1892,8 @@ async function loadLyrics(t) {
     if (rec) { rec.at = Date.now(); DB.put('lyrics', rec, t.id).catch(() => {}); }
   }
   if (ly.id !== t.id) return;
-  if (!rec) return lyMessage('Internet yo\'q — matnni yuklab bo\'lmadi');
+  $('.ly-credit').textContent = rec && !rec.none ? (rec.src || 'LRCLIB') : '';
+  if (!rec) return lyNotFound('Internet yo\'q — matnni yuklab bo\'lmadi');
   if (rec.synced) {
     // slowed / sped-up versions: stretch the timings to this file's length
     const dur = t.duration || audio.duration || 0;
@@ -1801,7 +1908,7 @@ async function loadLyrics(t) {
     box.classList.add('plain');
     inner.innerHTML = rec.plain.split(/\r?\n/).map(s => `<div class="ly-line">${esc(s) || '&nbsp;'}</div>`).join('');
     lyMessage('');
-  } else lyMessage('Bu qo\'shiq uchun matn topilmadi');
+  } else lyNotFound('Bu qo\'shiq uchun matn topilmadi');
 }
 function lyricsTick(force = false) {
   if (!ly.open || !ly.lines || !ly.lines.length) return;
@@ -1910,7 +2017,50 @@ async function openEdit(id) {
   $('#editModal').classList.remove('hidden');
   if (IS_DESKTOP) setTimeout(() => $('#editTitle').focus(), 50);
 }
-function closeEdit() { $('#editModal').classList.add('hidden'); editId = null; editArt = undefined; }
+function closeEdit() { $('#editModal').classList.add('hidden'); editId = null; editArt = undefined; pickRun++; $('#coverPick').classList.add('hidden'); }
+async function setEditArtFile(f) {
+  try { const d = await blobToDataUrl(f); await loadImage(d); editArt = d; $('#editArt').src = d; markPicked(null); toast('Rasm qo\'yildi ✓'); }
+  catch { toast('Bu rasmni ochib bo\'lmadi'); }
+}
+function markPicked(btn) { $$('#coverGrid .cp-item').forEach(b => b.classList.toggle('on', b === btn)); }
+/* Cover picker: every catalog's results as a grid, the user picks one */
+let pickRun = 0;
+async function openCoverPick() {
+  const title = $('#editTitle').value.trim(), artist = $('#editArtist').value.trim();
+  if (!title) { toast('Avval qo\'shiq nomini yozing'); return; }
+  const run = ++pickRun, box = $('#coverPick'), grid = $('#coverGrid');
+  box.classList.remove('hidden');
+  $('#coverNote').textContent = 'Apple Music, Deezer va MusicBrainz\'dan qidirilmoqda…';
+  grid.innerHTML = '<div class="cp-item sk"></div>'.repeat(8);
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  let list = [];
+  try { list = await coverCandidates(title, artist); } catch { /* offline */ }
+  if (run !== pickRun) return;
+  list = list.slice(0, 16);
+  if (!list.length) { grid.innerHTML = ''; $('#coverNote').textContent = 'Hech narsa topilmadi. Google\'dan qidirib ko\'ring yoki rasmni o\'zingiz tanlang.'; return; }
+  grid.innerHTML = '';
+  let shown = 0;
+  await Promise.all(list.map(async (c, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'cp-item sk'; btn.style.order = i; btn.title = `${c.title || ''} — ${c.artist || ''}`;
+    grid.append(btn);
+    const d = await fetchImageData(c.thumb).catch(() => null);
+    if (run !== pickRun) return;
+    if (!d) { btn.remove(); return; }
+    shown++;
+    btn.classList.remove('sk');
+    btn.innerHTML = `<img alt="" src="${d}"><span>${esc(c.src)}</span>`;
+    btn.addEventListener('click', async () => {
+      btn.classList.add('busy');
+      const full = c.full === c.thumb ? d : (await fetchImageData(c.full).catch(() => null)) || d;
+      btn.classList.remove('busy');
+      if (run !== pickRun) return;
+      editArt = full; $('#editArt').src = full; markPicked(btn);
+    });
+  }));
+  if (run !== pickRun) return;
+  $('#coverNote').textContent = shown ? `${shown} ta muqova topildi — birini tanlang` : 'Rasmlar yuklanmadi. Internetni tekshiring.';
+}
 async function saveEdit() {
   const t = S.tracks.get(editId);
   if (!t) return closeEdit();
@@ -2118,20 +2268,20 @@ function bind() {
 
   // edit dialog
   $('#editPickArt').addEventListener('click', () => { const i = $('#artInput'); i.value = ''; i.click(); });
-  $('#artInput').addEventListener('change', async e => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    try { editArt = await blobToDataUrl(f); await loadImage(editArt); $('#editArt').src = editArt; }
-    catch { editArt = undefined; toast('Bu rasmni ochib bo\'lmadi'); }
+  $('#artInput').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) setEditArtFile(f); });
+  $('#editFindArt').addEventListener('click', () => openCoverPick());
+  $('#coverGoogle').addEventListener('click', () => {
+    const q = `${cleanTitle($('#editTitle').value)} ${firstArtist($('#editArtist').value)} cover`.trim();
+    if (IS_DESKTOP) { NAVO.openSearch(q, true); toast('Rasmni nusxalang (Copy image) va shu oynada Ctrl+V bosing', true); setTimeout(() => hideToast(0), 6000); }
+    else { window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q), '_blank'); toast('Rasmni yuklab oling va «Rasm tanlash» bilan qo\'shing'); }
   });
-  $('#editFindArt').addEventListener('click', async () => {
-    const title = $('#editTitle').value.trim(), artist = $('#editArtist').value.trim();
-    if (!title) return;
-    toast('Muqova qidirilmoqda…', true);
-    let data = null;
-    try { data = await findCoverOnline({ title, artist }); } catch { /* */ }
-    if (data) { editArt = data; $('#editArt').src = data; toast('Muqova topildi ✓'); }
-    else toast('Internetda mos muqova topilmadi');
+  // paste an image (e.g. copied from Google / Spotify in the browser) straight into the dialog
+  document.addEventListener('paste', async e => {
+    if ($('#editModal').classList.contains('hidden')) return;
+    const item = [...(e.clipboardData && e.clipboardData.items || [])].find(i => i.type.startsWith('image/'));
+    if (!item) return;
+    e.preventDefault();
+    setEditArtFile(item.getAsFile());
   });
   $('#netCoversOn').addEventListener('change', e => {
     S.netCovers = e.target.checked; persist();
@@ -2139,6 +2289,12 @@ function bind() {
   });
   $('#editRemoveArt').addEventListener('click', () => { const t = S.tracks.get(editId); editArt = null; if (t) $('#editArt').src = placeholderArt(t); });
   $('#editCancel').addEventListener('click', closeEdit);
+  $('#lyMsg').addEventListener('click', e => { const b = e.target.closest('[data-ly]'); if (!b) return; b.dataset.ly === 'google' ? lyGoogle() : openLyEdit(); });
+  $('.ly-credit').addEventListener('click', openLyEdit);
+  $('#lyCancel').addEventListener('click', closeLyEdit);
+  $('#lySave').addEventListener('click', saveLyEdit);
+  $('#lyGoogle').addEventListener('click', lyGoogle);
+  $('#lyModal').addEventListener('pointerdown', e => { if (e.target.id === 'lyModal') closeLyEdit(); });
   $('#editModal').addEventListener('pointerdown', e => { if (e.target.id === 'editModal') closeEdit(); });
   $('#editSave').addEventListener('click', saveEdit);
   $('#editModal').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input[type=text]')) saveEdit(); });
@@ -2157,8 +2313,8 @@ function bind() {
 
   // keyboard
   document.addEventListener('keydown', e => {
-    if (e.target.matches('input[type=search], input[type=text]')) {
-      if (e.key === 'Escape') { e.target.blur(); if (!$('#editModal').classList.contains('hidden')) closeEdit(); }
+    if (e.target.matches('input[type=search], input[type=text], textarea')) {
+      if (e.key === 'Escape') { e.target.blur(); if (!$('#editModal').classList.contains('hidden')) closeEdit(); closeLyEdit(); }
       return;
     }
     if (e.key === ' ' || e.code === 'MediaPlayPause') { e.preventDefault(); toggle(); }
@@ -2181,6 +2337,11 @@ function bind() {
     window.addEventListener('dragover', e => e.preventDefault());
     window.addEventListener('drop', async e => {
       e.preventDefault(); dragDepth = 0; dz.classList.remove('show');
+      if (!$('#editModal').classList.contains('hidden')) {
+        const f = Array.from(e.dataTransfer.files).find(f => /^image\//.test(f.type));
+        if (f) setEditArtFile(f);
+        return;
+      }
       const paths = Array.from(e.dataTransfer.files).map(f => NAVO.pathForFile(f)).filter(Boolean);
       if (!paths.length) return;
       toast('Fayllar o\'qilmoqda…', true);
@@ -2291,5 +2452,7 @@ async function boot() {
   }
 }
 
+// hooks for the automated checks in electron/main.js (test runs only)
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S };
 boot();
 })();
