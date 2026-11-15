@@ -28,6 +28,22 @@
     $('#mainDlSub').textContent = 'macOS va iOS versiyasi tez orada';
   }
 
+  // "Tavsiya etiladi" goes to the visitor's own platform in the download section too
+  const plat = /Android/i.test(ua) ? 'Android' : /Linux/i.test(ua) ? 'Linux' : /Windows/i.test(ua) ? 'Windows' : null;
+  if (plat) {
+    const cards = [...document.querySelectorAll('.dl')];
+    const target = cards.find(c => c.querySelector('h3').textContent.trim() === plat);
+    const current = document.querySelector('.dl.rec');
+    if (target && current && target !== current) {
+      const tag = current.querySelector('.tag');
+      current.classList.remove('rec');
+      current.querySelector('.btn').classList.replace('btn-primary', 'btn-ghost');
+      target.classList.add('rec');
+      target.querySelector('.btn').classList.replace('btn-ghost', 'btn-primary');
+      if (tag) target.prepend(tag);
+    }
+  }
+
   // Feature icons (inline SVG)
   const I = {
     bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
