@@ -449,7 +449,15 @@ async function devScreenshots() {
       const l2 = await fetchLyrics({ title: 'Sog\\'inib', artist: '', duration: 0 });
       const l3 = await fetchLyrics({ title: 'zzqx nonexistent song', artist: 'nobody here', duration: 100 });
       const auto = await findCoverOnline({ title: 'Metamorphosis', artist: 'Interworld' });
-      return JSON.stringify({ covers: c.map(x => x.src + (x.ok ? '+' : '-')), uz: c2.slice(0, 6).map(x => x.src + (x.ok ? '+' : '-') + ' ' + x.artist), l1: l1.src + ' ' + !!l1.synced, l2: (l2.src || 'none') + ' ' + !!l2.synced, l3, auto: !!auto && auto.slice(0, 30) });
+      const messy = {};
+      for (const [tt, aa] of [['MONTAGEM ALQUIMIA (SLOWED) ｜ h6itam n7san7os', ''], ['Kordhell - Murder In My Mind (Official Audio) 🔥', ''], ['VAI TRAIR (SUPER SLOWED) X BLUE LOCK', 'Levan Smirin'], ['MTG DIABOLICA (Super Slowed)', 'Phonk Channel'], ['180db_ [130] (Super Slowed)', 'Akuran']]) {
+        const r = await coverCandidates(tt, aa, { deep: false });
+        messy[tt] = r.filter(x => x.ok).slice(0, 2).map(x => x.src + ': ' + x.title + ' / ' + x.artist);
+      }
+      document.querySelector('[data-fx="Concert Hall"]')?.click();
+      await new Promise(r => setTimeout(r, 600));
+      const fx = document.querySelector('#fxState').textContent + ' ' + JSON.stringify(window.__navo.S.fx);
+      return JSON.stringify({ messy, fx, covers: c.map(x => x.src + (x.ok ? '+' : '-')), uz: c2.slice(0, 6).map(x => x.src + (x.ok ? '+' : '-') + ' ' + x.artist), l1: l1.src + ' ' + !!l1.synced, l2: (l2.src || 'none') + ' ' + !!l2.synced, l3, auto: !!auto && auto.slice(0, 30) });
     })()`);
     console.log('ONLINE', r);
     await js(`__navo.openEdit(__navo.S.order[0]); document.querySelector('#editTitle').value = 'Metamorphosis'; document.querySelector('#editArtist').value = 'Interworld'; document.querySelector('#editFindArt').click()`);

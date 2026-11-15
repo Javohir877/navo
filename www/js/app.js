@@ -174,7 +174,9 @@ function ensureGraph() {
     fxDry = actx.createGain();
     fxWet = actx.createGain(); fxWet.gain.value = 0;
     convolver = actx.createConvolver();
-    convolver.buffer = makeImpulse(actx, 3.2, 2.6);
+    convolver.buffer = roomIR = makeImpulse(actx, 3.2, 2.6); irMode = 'room';
+    preDelay = actx.createDelay(0.2); preDelay.delayTime.value = 0.01;
+    wetTone = actx.createBiquadFilter(); wetTone.type = 'lowpass'; wetTone.frequency.value = 16000; wetTone.Q.value = 0.5;
     fxMix = actx.createGain();
     panner = actx.createStereoPanner ? actx.createStereoPanner() : null;
     lfo = actx.createOscillator(); lfo.frequency.value = 0.11;
@@ -182,7 +184,7 @@ function ensureGraph() {
     let node = srcNode.connect(preamp);
     filters.forEach(f => { node = node.connect(f); });
     node.connect(fxDry).connect(fxMix);
-    node.connect(convolver).connect(fxWet).connect(fxMix);
+    node.connect(preDelay).connect(convolver).connect(wetTone).connect(fxWet).connect(fxMix);
     let out = fxMix;
     if (panner) { lfo.connect(lfoDepth).connect(panner.pan); lfo.start(); out = fxMix.connect(panner); }
     out.connect(bassAn);
@@ -205,9 +207,11 @@ function applyEq() {
 }
 /* ---------- audio effects: Slowed + Reverb, Nightcore, 8D ---------- */
 let fxDry = null, fxWet = null, convolver = null, fxMix = null, panner = null, lfo = null, lfoDepth = null;
+let preDelay = null, wetTone = null, roomIR = null, hallIR = null, irMode = 'room', irSwap = 0;
 const FX_PRESETS = {
   'Oddiy':           { speed: 1,    reverb: 0,    d8: false },
   'Slowed + Reverb': { speed: 0.85, reverb: 0.4,  d8: false },
+  'Concert Hall':    { speed: 0.84, reverb: 0.6,  d8: false, hall: true },
   'Slowed':          { speed: 0.82, reverb: 0.12, d8: false },
   'Sped up':         { speed: 1.15, reverb: 0,    d8: false },
   'Nightcore':       { speed: 1.25, reverb: 0.05, d8: false },
@@ -222,6 +226,48 @@ function makeImpulse(ctx, seconds, decay) {
   }
   return buf;
 }
+/* Concert hall: 45 ms pre-delay, a cluster of early wall reflections, then a long
+   (~4.5 s RT60) diffuse tail that gets darker as it decays, like air and seats absorbing highs. */
+function makeHallImpulse(ctx) {
+  const rate = ctx.sampleRate, seconds = 5.2, len = Math.floor(rate * seconds), rt60 = 4.4;
+  const buf = ctx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    // early reflections: different on each side for width
+    for (let k = 0; k < 14; k++) {
+      const t = 0.008 + Math.random() * 0.085, i = Math.floor(t * rate);
+      d[i] += (Math.random() < 0.5 ? -1 : 1) * (0.9 - k * 0.05) * Math.exp(-t * 9);
+    }
+    // diffuse tail, faded in over ~60 ms, low-passed more and more over time
+    let lp = 0;
+    const start = Math.floor(0.025 * rate), fadeIn = 0.06 * rate;
+    for (let i = start; i < len; i++) {
+      const t = i / rate, env = Math.pow(10, (-3 * t) / rt60) * Math.min(1, (i - start) / fadeIn);
+      const a = Math.min(0.92, 0.18 + t * 0.2);           // one-pole low-pass: brighter early, warm late
+      lp = lp * a + (Math.random() * 2 - 1) * (1 - a);
+      d[i] += lp * env * (1.6 + t * 0.5);
+    }
+    const fade = Math.floor(rate * 0.3);                    // no click at the very end
+    for (let i = 0; i < fade; i++) d[len - 1 - i] *= i / fade;
+  }
+  return buf;
+}
+function setReverbRoom(hall) {
+  const want = hall ? 'hall' : 'room';
+  if (!convolver || irMode === want) return false;
+  irMode = want;
+  const t = actx.currentTime, id = ++irSwap;
+  fxWet.gain.setTargetAtTime(0, t, 0.03);                   // fade the old tail out, then swap (no click)
+  setTimeout(() => {
+    if (id !== irSwap) return;
+    convolver.buffer = hall ? (hallIR || (hallIR = makeHallImpulse(actx))) : roomIR;
+    const n = actx.currentTime;
+    preDelay.delayTime.setTargetAtTime(hall ? 0.045 : 0.01, n, 0.01);
+    wetTone.frequency.setTargetAtTime(hall ? 5200 : 16000, n, 0.01);
+    fxWet.gain.setTargetAtTime(S.fx.reverb * (hall ? 0.75 : 0.85), n, 0.12);
+  }, 160);
+  return true;
+}
 function applyFx() {
   const f = S.fx;
   audio.preservesPitch = false;           // slowed / nightcore sound "real" with pitch following speed
@@ -229,8 +275,8 @@ function applyFx() {
   audio.playbackRate = f.speed;
   if (actx && fxWet) {
     const t = actx.currentTime;
-    fxWet.gain.setTargetAtTime(f.reverb * 0.85, t, 0.08);
-    fxDry.gain.setTargetAtTime(1 - f.reverb * 0.35, t, 0.08);
+    if (!setReverbRoom(!!f.hall)) fxWet.gain.setTargetAtTime(f.reverb * (f.hall ? 0.75 : 0.85), t, 0.08);
+    fxDry.gain.setTargetAtTime(1 - f.reverb * (f.hall ? 0.45 : 0.35), t, 0.08);
     if (lfoDepth) lfoDepth.gain.setTargetAtTime(f.d8 ? 0.9 : 0, t, 0.2);
   }
   const name = f.preset || 'Maxsus';
@@ -1661,8 +1707,34 @@ function openMenu(id, x, y) {
 const normTxt = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\b(feat|ft)\.?\b.*$/, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function cleanTitle(t) {
-  return String(t || '').replace(/\((?:[^)]*?)(slowed|sped up|speed up|reverb|remix|edit|bass boosted|lyrics?|official|audio|video|текст[^)]*)[^)]*\)/gi, ' ')
-    .replace(/\[[^\]]*\]/g, ' ').replace(/\b(super\s+)?slowed( \+ reverb)?\b/gi, ' ').replace(/\s+-\s+$/, '').replace(/\s{2,}/g, ' ').trim();
+  return String(t || '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F\u200d]/gu, ' ')                       // emoji
+    .replace(/\((?:[^)]*?)(slowed|sped up|speed up|nightcore|reverb|remix|edit|bass ?boost(ed)?|lyrics?|official|audio|video|visuali[sz]er|phonk|tiktok|version|prod\.?|текст[^)]*)[^)]*\)/gi, ' ')
+    .replace(/\[[^\]]*\]|【[^】]*】/g, ' ')
+    .replace(/\b(?:super |ultra |mega |extreme |perfectly )?slowed(?: ?(?:\+|&|and) ?reverb)?\b/gi, ' ')
+    .replace(/\b(?:sped up|speed up|bass ?boosted|official (?:music )?(?:video|audio)|lyrics? video|1 ?hour|hq|hd|4k)\b/gi, ' ')
+    .replace(/\s+[-–—]\s*$/, '').replace(/^\s*[-–—]\s+/, '').replace(/\s{2,}/g, ' ').trim();
+}
+// Several ways to read a messy name: "Artist - Title", "Title ｜ Artist", "A X B" mashups…
+const NAME_SEP = /\s+[-–—]\s+|\s*[|｜⧸•]\s*|\s+\/\s+/;
+function queryVariants(title, artist) {
+  const t = cleanTitle(title), a = firstArtist(artist), out = [];
+  const push = (tt, aa) => {
+    tt = cleanTitle(tt); aa = firstArtist(aa);
+    if (tt && !out.some(v => v.t === tt && v.a === aa)) out.push({ t: tt, a: aa });
+  };
+  const parts = t.split(NAME_SEP).map(x => x.trim()).filter(Boolean);
+  if (a) push(t, a);
+  if (parts.length >= 2) {
+    const own = a && parts.find(x => similar(a, x) < 0.5);
+    if (own && own !== t) push(own, a);
+    push(parts[1], parts[0]); push(parts[0], parts[1]);
+  }
+  if (!a) push(t, '');
+  const head = t.split(/\s+(?:x|×|ft\.?|feat\.?|vs\.?)\s+/i)[0];
+  if (head && head !== t) push(head, a);
+  if (a) push(parts.length >= 2 ? parts[0] : t, '');       // the artist tag may be an uploader, not the artist
+  return out.slice(0, 5);
 }
 function similar(a, b) {
   const A = new Set(normTxt(a).split(' ').filter(Boolean)), B = new Set(normTxt(b).split(' ').filter(Boolean));
@@ -1686,15 +1758,33 @@ async function mbGate() { const w = mbLast + 1100 - Date.now(); mbLast = Date.no
 /* Cover candidates from several catalogs, best match first.
    Apple Music (the catalog Shazam shows covers from; US + RU stores, which also
    carry most Uzbek/CIS releases), Deezer, and MusicBrainz / Cover Art Archive. */
+// with no artist to check, the title itself must match closely (not just share a word)
+function simStrict(a, b) {
+  const A = new Set(normTxt(a).split(' ').filter(Boolean)), B = new Set(normTxt(b).split(' ').filter(Boolean));
+  if (!A.size || !B.size) return 0;
+  let hit = 0; for (const w of A) if (B.has(w)) hit++;
+  return hit / Math.max(A.size, B.size);
+}
 async function coverCandidates(title, artist, { deep = true } = {}) {
-  const t = cleanTitle(title), a = firstArtist(artist);
-  if (!t) return [];
+  const vars = queryVariants(title, artist);
+  if (!vars.length) return [];
+  let all = [];
+  for (let i = 0; i < vars.length; i++) {
+    const list = await coverSearch(vars[i].t, vars[i].a, deep && i === 0, -i * 0.01);
+    all = all.concat(list);
+    if (list.some(c => c.ok)) break;
+  }
+  const seen = new Set();
+  return all.sort((x, y) => (y.ok - x.ok) || (y.s - x.s)).filter(c => !seen.has(c.full) && seen.add(c.full));
+}
+async function coverSearch(t, a, deep, penalty) {
   const term = encodeURIComponent(`${t} ${a}`.trim());
   const out = [];
   const add = (src, tt, aa, thumb, full, bonus = 0) => {
     if (!full) return;
     const st = similar(t, tt), sa = a ? similar(a, aa) : 0.5;
-    out.push({ src, title: tt, artist: aa, thumb: thumb || full, full, ok: st >= 0.6 && (!a || sa >= 0.5), s: st * 2 + sa + bonus });
+    const ok = a ? st >= 0.6 && sa >= 0.5 : simStrict(t, tt) >= 0.6;
+    out.push({ src, title: tt, artist: aa, thumb: thumb || full, full, ok, s: st * 2 + sa + bonus + penalty });
   };
   const it = c => httpJson(`https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=8&country=${c}`).then(j => {
     for (const x of (j && j.results) || []) if (x.artworkUrl100)
@@ -1747,11 +1837,12 @@ async function setTrackArt(t, dataUrl, prefix) {
   if (t.id === S.currentId) updateNowPlaying(t);
   renderNext();
 }
+const COVER_V = 2;   // bump when the search gets better, so earlier misses are tried again
 const coverQueue = [];
 let coverBusy = false;
 function queueCover(id) {
   const t = S.tracks.get(id);
-  if (!S.netCovers || !t || t.artKey || t.coverTried || coverQueue.includes(id)) return;
+  if (!S.netCovers || !t || t.artKey || t.coverTried === COVER_V || coverQueue.includes(id)) return;
   coverQueue.push(id);
   runCovers();
 }
@@ -1763,7 +1854,7 @@ async function runCovers() {
     if (!t || t.artKey) continue;
     let data = null;
     try { data = await findCoverOnline(t); } catch { /* */ }
-    t.coverTried = true;
+    t.coverTried = COVER_V;
     if (data) { try { await setTrackArt(t, data, 'n:'); } catch { /* */ } }
     await DB.put('tracks', stripTrack(t)).catch(() => {});
     await sleep(250);
@@ -1809,8 +1900,10 @@ async function fetchLyrics(t) {
   const title = cleanTitle(t.title), artist = firstArtist(t.artist);
   if (!title) return { none: true };
   const dur = t.duration || audio.duration || 0;
-  const names = [{ title, artist }];
-  let best = await lrclibFind(title, artist, dur);
+  const names = queryVariants(t.title, t.artist).slice(0, 3).map(v => ({ title: v.t, artist: v.a }));
+  if (!names.length) names.push({ title, artist });
+  let best = null;
+  for (const n of names) { best = await lrclibFind(n.title, n.artist, dur); if (best) break; }
   if (!best) {
     const id = await itunesIdentify(title, artist, dur);
     if (id && (normTxt(id.title) !== normTxt(title) || normTxt(id.artist) !== normTxt(artist))) {
