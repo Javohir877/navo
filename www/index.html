@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#07070d">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' navo: capacitor: http://localhost https://localhost; img-src 'self' data: blob: navo: https://localhost http://localhost; media-src 'self' blob: data: navo: https://localhost http://localhost; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' navo: capacitor: http://localhost https://localhost; img-src 'self' data: blob: navo: https://localhost http://localhost; media-src 'self' blob: data: navo: https://localhost http://localhost; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:">
 <title>Navo</title>
 <link rel="icon" href="img/logo.svg">
 <link rel="stylesheet" href="css/style.css">
@@ -53,6 +53,8 @@
   <div class="bg-art" id="bgArt"></div>
   <div class="grain"></div>
 </div>
+
+<div id="splash"><img src="img/logo.svg" alt=""><span>Navo</span></div>
 
 <!-- bass waves travel here: above the background, BEHIND the panels and covers -->
 <div id="fxLayer"></div>
@@ -228,6 +230,7 @@
 </footer>
 
 <nav id="tabbar" class="glass">
+  <span class="tab-pill" id="tabPill"></span>
   <button class="tab active" data-view="library"><svg class="i"><use href="#i-note"/></svg><span>Kutubxona</span></button>
   <button class="tab" data-view="top"><svg class="i"><use href="#i-flame"/></svg><span>Top</span></button>
   <button class="tab" data-view="favorites"><svg class="i"><use href="#i-heart"/></svg><span>Sevimli</span></button>

@@ -518,6 +518,7 @@ async function updateNowPlaying(t) {
   bg.style.backgroundImage = `url("${soft}")`;
   bg.classList.toggle('on', hasArt);
   $('#fpBg').style.backgroundImage = `url("${soft}")`;
+  syncNowCard();
 
   let pal = null;
   if (hasArt && img) { try { pal = paletteFromImage(img); } catch { /* */ } }
@@ -617,7 +618,8 @@ function markPlaying() {
 const vizState = new Map();
 const fpArtEl = $('#fpArt'), fpGlowEl = $('.fp-glow');
 let vizColors = ['#6d5cff', '#a597ff', '#ff4f9a'];
-function clearViz() { for (const cv of [$('#npViz'), $('#fpViz')]) { const g = cv.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); } }
+const vizCanvases = () => [$('#npViz'), $('#fpViz'), document.getElementById('mViz')].filter(Boolean);
+function clearViz() { for (const cv of vizCanvases()) { const g = cv.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); } }
 /* ============================================================
    Bass engine — runs every frame (60 fps), time-based smoothing.
    level : how loud the low end is right now (the cover "breathes")
@@ -626,7 +628,8 @@ function clearViz() { for (const cv of [$('#npViz'), $('#fpViz')]) { const g = c
    Everything animates only transform/opacity, so it stays smooth.
    ============================================================ */
 let bassAvg = 0, bassSlow = 0, prevE = 0, level = 0, punch = 0, lastBoom = 0, lastTs = 0, lastPulseOut = -1;
-const bassArts = $$('.bass-art'), bassGlows = $$('.bass-glow');
+// live collections: covers created later (mobile now-playing card) pulse too
+const bassArts = document.getElementsByClassName('bass-art'), bassGlows = document.getElementsByClassName('bass-glow');
 const fpBgEl = $('#fpBg'), fpBodyEl = $('.fp-body'), fpFlashEl = $('.fp-flash');
 const lerpK = (dt, tau) => 1 - Math.exp(-dt / tau);
 function bassEnergy() {
@@ -656,10 +659,24 @@ function hitBeat(s, ts, big) {
   else if (level2 === 1 && ts - lastBoom > FXP.minGap) { lastBoom = ts; boom(Math.max(0.5, s)); }
   else edgeKick = Math.max(edgeKick, s * 0.3 * FXP.edge);
 }
+/* Smooth media clock: some Android WebViews update currentTime only every ~250 ms,
+   which made the effects arrive in bursts. Interpolate between updates instead. */
+const mclock = { ct: -1, at: 0 };
+function mediaTime() {
+  const ct = audio.currentTime, now = performance.now();
+  if (ct !== mclock.ct || audio.paused) { mclock.ct = ct; mclock.at = now; return ct; }
+  return ct + Math.min(0.5, (now - mclock.at) / 1000) * (audio.playbackRate || 1);
+}
+// How late the sound reaches the speakers (phones are slower, Bluetooth even more)
+function audioLatency() {
+  const fallback = IS_DESKTOP ? 0.02 : 0.09;
+  if (!actx) return fallback;
+  const o = actx.outputLatency;
+  return (typeof o === 'number' && o > 0 ? o : fallback) + (actx.baseLatency || 0);
+}
 function seekBeat() {
   if (!beatMap) return;
-  const lat = actx ? (actx.outputLatency || 0) + (actx.baseLatency || 0) : 0.03;
-  const now = audio.currentTime - lat, t = beatMap.times;
+  const now = mediaTime() - audioLatency(), t = beatMap.times;
   let lo = 0, hi = t.length;
   while (lo < hi) { const m = (lo + hi) >> 1; if (t[m] < now) lo = m + 1; else hi = m; }
   beatIdx = lo;
@@ -669,17 +686,42 @@ async function trackBytes(t) {
   const b = await DB.get('blobs', t.id);
   return b ? b.arrayBuffer() : null;
 }
-async function analyzeBeats(t) {
-  if (!t) return null;
-  if (beatCache.has(t.id)) return beatCache.get(t.id);
-  if ((t.duration || 0) > 15 * 60) return null;             // skip hour-long mixes
-  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!OAC) return null;
-  const bytes = await trackBytes(t);
-  if (!bytes) return null;
-  const ab = await new OAC(1, 1, 11025).decodeAudioData(bytes); // low rate: bass only, 4x less work
-  const sr = ab.sampleRate, len = ab.length;
-  const c0 = ab.getChannelData(0), c1 = ab.numberOfChannels > 1 ? ab.getChannelData(1) : null;
+/* The whole beat analysis is one self-contained function, so it can run inside a
+   Web Worker (no UI freeze on phones) — or inline as a fallback. */
+function beatCore(c0, c1, sr) {
+  function estimateBpm(times, str) {
+    const hist = new Float32Array(111);                    // 70..180 BPM
+    for (let i = 1; i < times.length; i++) {
+      for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
+        const d = times[i] - times[j];
+        if (d < 0.25 || d > 2) continue;
+        let bpm = 60 / d;
+        while (bpm < 70) bpm *= 2;
+        while (bpm >= 180) bpm /= 2;
+        const w = (str[i] + str[j]) * (j === i - 1 ? 1 : 0.5);
+        const b = Math.round(bpm) - 70;
+        for (let k = -1; k <= 1; k++) if (b + k >= 0 && b + k < 111) hist[b + k] += w * (k ? 0.5 : 1);
+      }
+    }
+    let best = 0; for (let b = 1; b < 111; b++) if (hist[b] > hist[best]) best = b;
+    return best + 70;
+  }
+  function classifyStyle(times, str, dur, bassRatio, rms) {
+    const n = times.length, density = n / Math.max(1, dur);
+    let strongN = 0; for (let i = 0; i < n; i++) if (str[i] > 0.6) strongN++;
+    const strong = strongN / Math.max(1, dur);
+    const bpm = n > 8 ? estimateBpm(times, str) : 0;
+    let style;
+    if (density < 0.7 || rms < 0.045 || (bassRatio < 0.1 && density < 1.6)) style = 'calm';
+    else if (bassRatio > 0.3 && strong > 0.9) style = 'phonk';
+    else if (bpm >= 70 && bpm <= 108 && bassRatio > 0.16) style = 'rap';
+    else if (bpm >= 114 && bpm <= 140 && density > 1.6) style = 'electro';
+    else if (bassRatio > 0.34 && density > 1.2) style = 'phonk';
+    else style = 'pop';
+    return { style, bpm, density: +density.toFixed(2), bass: +bassRatio.toFixed(2), rms: +rms.toFixed(3) };
+  }
+
+  const len = c0.length;
   const HOP = Math.max(32, Math.round(sr * 0.0058)), hopSec = HOP / sr;
   const a = Math.exp(-2 * Math.PI * 160 / sr);              // 2-pole low-pass ~160 Hz
   const nF = Math.floor(len / HOP), E = new Float32Array(nF);
@@ -694,7 +736,6 @@ async function analyzeBeats(t) {
     }
     E[f] = s / HOP;
   }
-  // loudness reference per second (so quiet intros still get their hits)
   const per = Math.round(1 / hopSec), blocks = Math.ceil(nF / per), bMax = new Float32Array(blocks);
   for (let f = 0; f < nF; f++) { const b = (f / per) | 0; if (E[f] > bMax[b]) bMax[b] = E[f]; }
   let gMax = 0; for (let b = 0; b < blocks; b++) gMax = Math.max(gMax, bMax[b]);
@@ -714,30 +755,26 @@ async function analyzeBeats(t) {
     if (pk < ref * 0.22 || pk < gMax * 0.02) continue;
     times.push(Math.max(0, f * hopSec - lead)); peaks.push(pk); last = f;
   }
-  // strength relative to the song's loud hits
+  // linear strength vs the song's loud hits: quiet intros / breakdowns stay weak
   const sorted = peaks.slice().sort((x, y) => x - y);
   const ref95 = sorted[Math.floor(sorted.length * 0.95)] || gMax || 1;
   const str = new Float32Array(peaks.length);
-  // linear strength vs the song's loud hits: quiet intros / breakdowns stay weak
   for (let i = 0; i < peaks.length; i++) str[i] = Math.min(1, peaks[i] / ref95);
-  // Sections, like a phonk edit: find where the bass is really ON (the drop).
-  // Mean low-end energy per 0.5 s block, smoothed over ±1.5 s, relative to the loud part of the song.
+  // sections, like a phonk edit: where the bass is really ON (the drop)
   const bl = Math.max(1, Math.round(0.5 / hopSec)), nB = Math.ceil(nF / bl), bMean = new Float32Array(nB);
   for (let f = 0; f < nF; f++) bMean[(f / bl) | 0] += Es[f] / bl;
   const sec = new Float32Array(nB);
-  for (let b = 0; b < nB; b++) { let s = 0, c = 0; for (let k = -3; k <= 3; k++) if (b + k >= 0 && b + k < nB) { s += bMean[b + k]; c++; } sec[b] = s / c; }
+  for (let b = 0; b < nB; b++) { let s = 0, c = 0; for (let q = -3; q <= 3; q++) if (b + q >= 0 && b + q < nB) { s += bMean[b + q]; c++; } sec[b] = s / c; }
   const p90 = Array.from(sec).sort((x, y) => x - y)[Math.floor(nB * 0.9)] || 1;
-  // big: 0 = small punch only, 1 = BAMM on the beat, 2 = MEGA (the drop / bass coming back)
   const energyAt = tt => tt < 0 ? 0 : sec[Math.min(nB - 1, (tt / (bl * hopSec)) | 0)] / p90;
-  // BAMMs follow the beat: at most one per beat, the strongest hit wins
+  // big: 0 = small punch only, 1 = BAMM on the beat, 2 = MEGA (the drop / bass coming back)
   const bpm0 = times.length > 8 ? estimateBpm(times, str) : 120;
   const beatGap = Math.max(0.38, (60 / bpm0) * 0.92);
   const big = new Uint8Array(str.length);
   let lastBigI = -1, lastMega = -99;
   for (let i = 0; i < str.length; i++) {
     const tt = times[i];
-    if (energyAt(tt) < 0.55 || str[i] < 0.4) continue;        // bass not really on: no BAMM
-    // MEGA: the bass comes back after a quiet part (the drop)
+    if (energyAt(tt) < 0.55 || str[i] < 0.4) continue;
     if (tt > 1.5 && energyAt(tt - 1.2) < 0.42 && tt - lastMega > 4) { big[i] = 2; lastMega = tt; lastBigI = i; continue; }
     if (lastBigI >= 0 && tt - times[lastBigI] < beatGap) {
       if (big[lastBigI] === 1 && str[i] > str[lastBigI]) { big[lastBigI] = 0; big[i] = 1; lastBigI = i; }
@@ -746,43 +783,52 @@ async function analyzeBeats(t) {
     big[i] = 1; lastBigI = i;
   }
   for (let f = 0; f < nF; f++) bassE += E[f] * HOP;
-  const res = { times: Float32Array.from(times), str, big };
-  res.style = classifyStyle(res, len / sr, bassE / (totE || 1), Math.sqrt(totE / (len || 1)));
+  const t32 = Float32Array.from(times);
+  return { times: t32, str, big, style: classifyStyle(t32, str, len / sr, bassE / (totE || 1), Math.sqrt(totE / (len || 1))) };
+}
+let beatWorker = null, beatJob = 0;
+const beatJobs = new Map();
+function getBeatWorker() {
+  if (beatWorker !== null) return beatWorker;
+  try {
+    const src = `${beatCore.toString()}
+      onmessage = e => { const { id, c0, c1, sr } = e.data;
+        try { const r = beatCore(c0, c1, sr); postMessage({ id, r }, [r.times.buffer, r.str.buffer, r.big.buffer]); }
+        catch (err) { postMessage({ id, err: String(err) }); } };`;
+    beatWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    beatWorker.onmessage = e => { const j = beatJobs.get(e.data.id); if (j) { beatJobs.delete(e.data.id); e.data.err ? j.rej(new Error(e.data.err)) : j.res(e.data.r); } };
+    beatWorker.onerror = () => { beatJobs.forEach(j => j.rej(new Error('worker'))); beatJobs.clear(); beatWorker = false; };
+  } catch { beatWorker = false; }
+  return beatWorker;
+}
+function runBeatCore(c0, c1, sr) {
+  const w = getBeatWorker();
+  if (!w) return Promise.resolve(beatCore(c0, c1, sr));      // fallback: same code, main thread
+  return new Promise((res, rej) => {
+    const id = ++beatJob;
+    beatJobs.set(id, { res, rej });
+    const bufs = [c0.buffer]; if (c1) bufs.push(c1.buffer);
+    w.postMessage({ id, c0, c1, sr }, bufs);
+  });
+}
+async function analyzeBeats(t) {
+  if (!t) return null;
+  if (beatCache.has(t.id)) return beatCache.get(t.id);
+  if ((t.duration || 0) > 15 * 60) return null;             // skip hour-long mixes
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OAC) return null;
+  const bytes = await trackBytes(t);
+  if (!bytes) return null;
+  const ab = await new OAC(1, 1, 11025).decodeAudioData(bytes); // decoding is off-thread; low rate = 4x less work
+  // copy the channels so they can be handed to the worker
+  const c0 = new Float32Array(ab.getChannelData(0));
+  const c1 = ab.numberOfChannels > 1 ? new Float32Array(ab.getChannelData(1)) : null;
+  const res = await runBeatCore(c0, c1, ab.sampleRate);
   beatCache.set(t.id, res);
   if (beatCache.size > 24) beatCache.delete(beatCache.keys().next().value);
   return res;
 }
-/* ---------- music style detection -> effect profile ---------- */
-function estimateBpm(times, str) {
-  const hist = new Float32Array(111);                    // 70..180 BPM
-  for (let i = 1; i < times.length; i++) {
-    for (let j = i - 1; j >= Math.max(0, i - 4); j--) {   // a few neighbours: catches off-beats too
-      const d = times[i] - times[j];
-      if (d < 0.25 || d > 2) continue;
-      let bpm = 60 / d;
-      while (bpm < 70) bpm *= 2;
-      while (bpm >= 180) bpm /= 2;
-      const w = (str[i] + str[j]) * (j === i - 1 ? 1 : 0.5);
-      const b = Math.round(bpm) - 70;
-      for (let k = -1; k <= 1; k++) if (b + k >= 0 && b + k < 111) hist[b + k] += w * (k ? 0.5 : 1);
-    }
-  }
-  let best = 0; for (let b = 1; b < 111; b++) if (hist[b] > hist[best]) best = b;
-  return best + 70;
-}
-function classifyStyle(res, dur, bassRatio, rms) {
-  const n = res.times.length, density = n / Math.max(1, dur);
-  const strong = n ? Array.from(res.str).filter(s => s > 0.6).length / Math.max(1, dur) : 0;
-  const bpm = n > 8 ? estimateBpm(res.times, res.str) : 0;
-  let style;
-  if (density < 0.7 || rms < 0.045 || (bassRatio < 0.1 && density < 1.6)) style = 'calm';
-  else if (bassRatio > 0.3 && strong > 0.9) style = 'phonk';
-  else if (bpm >= 70 && bpm <= 108 && bassRatio > 0.16) style = 'rap';
-  else if (bpm >= 114 && bpm <= 140 && density > 1.6) style = 'electro';
-  else if (bassRatio > 0.34 && density > 1.2) style = 'phonk';
-  else style = 'pop';
-  return { style, bpm, density: +density.toFixed(2), bass: +bassRatio.toFixed(2), rms: +rms.toFixed(3) };
-}
+
 const FX_STYLES = {
   calm:    { label: 'Sokin',    boomTh: 2,    minGap: 1400, waves: 1, kind: 'soft',  dur: 2400, sparks: 0,    punch: 0.35, shake: 0,   flash: 0,   edge: 0.45, rays: 0.4, ripple: true },
   rap:     { label: 'Rep',      boomTh: 0.5,  minGap: 560,  waves: 1, kind: 'crisp', dur: 650,  sparks: 0.25, punch: 1.35, shake: 0.6, flash: 0,   edge: 1,    rays: 0.7 },
@@ -799,6 +845,8 @@ function applyStyle() {
   if (lab) lab.textContent = (S.fxStyle === 'auto' ? 'Avto · ' : '') + FXP.label +
     (detectedStyle && detectedStyle.bpm ? ` · ~${detectedStyle.bpm} BPM` : '');
   $$('#stylePresets .preset').forEach(b => b.classList.toggle('active', b.dataset.style === (S.fxStyle || 'auto')));
+  const mLab = $('.m-now-meta small');
+  if (mLab) mLab.textContent = `HOZIR IJRODA · ${FXP.label}`;
   const fx = S.fx.preset && S.fx.preset !== 'Oddiy' ? ` · ${S.fx.preset}` : '';
   $('#fpSource').textContent = `${S.source || 'Kutubxona'}${fx} · ${FXP.label}`;
 }
@@ -840,13 +888,15 @@ function bassPulse(dt, ts) {
   const bm = beatMap && beatFor === S.currentId ? beatMap : null;
   if (bm) {
     // Frame-exact: fire on the pre-analysed hits, compensating the audio output latency.
-    const lat = actx ? (actx.outputLatency || 0) + (actx.baseLatency || 0) : 0.03;
-    const heard = audio.currentTime - lat;
+    const heard = mediaTime() - audioLatency();
     punch *= 1 - lerpK(dt, 150);                      // decay after each hit
+    // fire only the newest passed hit: never a burst of several at once
+    let fire = -1;
     while (beatIdx < bm.times.length && bm.times[beatIdx] <= heard) {
-      if (S.playing && heard - bm.times[beatIdx] < 0.12) hitBeat(bm.str[beatIdx], ts, bm.big ? bm.big[beatIdx] : null);
+      if (heard - bm.times[beatIdx] < 0.12) fire = beatIdx;
       beatIdx++;
     }
+    if (fire >= 0 && S.playing) hitBeat(bm.str[fire], ts, bm.big ? bm.big[fire] : null);
   } else {
     // Fallback until the song is analysed: real-time detection.
     const pTarget = Math.max(0, Math.min(1, (e - bassAvg * 1.08) * 4));
@@ -868,12 +918,12 @@ function applyPulse(p, lv = 0) {
   if (Math.abs(p - lastPulseOut) < 0.002) return;
   lastPulseOut = p;
   const s = p > 0.002 ? `scale(${(1 + p * 0.055).toFixed(4)})` : '';
-  bassArts.forEach(el => { el.style.transform = s; });
+  Array.prototype.forEach.call(bassArts, el => { el.style.transform = s; });
   fpArtEl.style.transform = p > 0.002 ? `scale(${(1 + p * 0.04).toFixed(4)})` : '';
   if (S.liteOn) return;
   const gs = `scale(${(1 + p * 0.32).toFixed(4)})`;
   const go = (p * 0.95).toFixed(3);
-  bassGlows.forEach(el => { el.style.opacity = go; el.style.transform = gs; });
+  Array.prototype.forEach.call(bassGlows, el => { el.style.opacity = go; el.style.transform = gs; });
   fpGlowEl.style.opacity = (0.3 + p * 0.65).toFixed(3);
   fpGlowEl.style.transform = `scale(${(1 + p * 0.3).toFixed(4)})`;
   // the blurred cover behind everything in the full player moves with the bass
@@ -894,7 +944,7 @@ function boom(strength, mega = false) {
   // shock rings around every visible cover
   $$('.boom-ring').forEach(r => {
     if (!r.offsetParent && !(fpOpen && r.closest('#fullPlayer'))) return;
-    r.animate(RING_KF, { duration: 620 + s * 200, easing: 'cubic-bezier(.15,.75,.3,1)' });
+    stopAnims(r); r.animate(RING_KF, { duration: 620 + s * 200, easing: 'cubic-bezier(.15,.75,.3,1)' });
   });
   edgeKick = Math.max(edgeKick, s * FXP.edge);
   fxBurst(s);
@@ -948,13 +998,16 @@ const raysEl = $('.fp-rays');
 function fxOrigin() {
   const fpOpen = $('#fullPlayer').classList.contains('open');
   const np = $('.np-art');
-  let el = fpOpen ? fpArtEl : (np.offsetParent ? np : $('.p-art'));
+  const mArt = $('.m-now .bass-art');
+  const mVisible = mArt && mArt.offsetParent && (() => { const r = mArt.getBoundingClientRect(); return r.bottom > 40 && r.top < innerHeight - 160; })();
+  let el = fpOpen ? fpArtEl : (np.offsetParent ? np : (mVisible ? mArt : $('.p-art')));
   if (fpOpen && ly.open) el = $('.ly-line.on') || $('#lyrics');
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2, size: Math.max(40, r.width, r.height), fp: fpOpen };
 }
 function fxWave(pool, o, far, s, delay, kind, dur) {
   const w = pool.waves[pool.wi++ % pool.waves.length];
+  stopAnims(w);
   w.className = 'fx-wave' + (kind ? ' ' + kind : '');
   w.style.left = (o.x - WAVE_PX / 2) + 'px';
   w.style.top = (o.y - WAVE_PX / 2) + 'px';
@@ -974,14 +1027,15 @@ function fxBurst(s) {
   const pool = o.fp ? poolFull : poolMain;
   const W = innerWidth, H = innerHeight;
   const far = Math.hypot(Math.max(o.x, W - o.x), Math.max(o.y, H - o.y));
-  const waves = boomMega ? 3 : FXP.waves;
+  const waves = Math.min(IS_DESKTOP ? 3 : 2, boomMega ? 3 : FXP.waves);
   fxWave(pool, o, far, s, 0, boomMega ? '' : FXP.kind, boomMega ? 1300 : FXP.dur);
   if (waves > 1 && s > 0.45) fxWave(pool, o, far * 0.75, s * 0.8, 90, 'alt', FXP.dur * 0.88);
   if (waves > 2 && s > 0.8) fxWave(pool, o, far * 0.5, s * 0.6, 180, 'soft', FXP.dur * 0.8);
-  const n = Math.round((S.liteOn ? 6 : 10 + s * 16) * (boomMega ? Math.max(1.4, FXP.sparks * 1.5) : FXP.sparks));
+  const n = Math.round((S.liteOn ? 6 : 10 + s * 16) * (boomMega ? Math.max(1.4, FXP.sparks * 1.5) : FXP.sparks) * (IS_DESKTOP ? 1 : 0.55));
   const reach = 90 + o.size * 0.6;
   for (let i = 0; i < n; i++) {
     const d = pool.sparks[pool.si++ % pool.sparks.length];
+    stopAnims(d);
     const a = Math.random() * Math.PI * 2;
     const sx = o.x + Math.cos(a) * o.size * 0.5, sy = o.y + Math.sin(a) * o.size * 0.5;
     const dist = reach * (0.4 + Math.random() * 0.9);
@@ -1012,9 +1066,11 @@ function coverPunch(s) {
   ];
   const opts = { duration: 300, easing: 'cubic-bezier(.2,.8,.3,1)', composite: 'add' };
   const fpOpen = $('#fullPlayer').classList.contains('open');
-  if (fpOpen && !ly.open) fpArtEl.animate(kf, opts);
-  else bassArts.forEach(el => { if (el.offsetParent) el.animate(kf, opts); });
+  if (fpOpen && !ly.open) { stopAnims(fpArtEl); fpArtEl.animate(kf, opts); }
+  else Array.from(bassArts).forEach(el => { if (el.offsetParent) { stopAnims(el); el.animate(kf, opts); } });
 }
+// a pooled element that is reused must not stack animations on top of each other
+function stopAnims(el) { const a = el.getAnimations(); for (let i = 0; i < a.length; i++) a[i].cancel(); }
 function fxDraw() { return false; } // all effects run on the compositor now
 let loopOn = false, idleFrames = 0;
 function startLoop() { if (!loopOn) { loopOn = true; idleFrames = 0; requestAnimationFrame(tick); } }
@@ -1038,7 +1094,7 @@ function tick(ts) {
     if (analyser && S.playing) analyser.getByteFrequencyData(freqData);
     const fpOpen = $('#fullPlayer').classList.contains('open');
     vizMoving = false;
-    for (const cv of [$('#npViz'), $('#fpViz')]) {
+    for (const cv of vizCanvases()) {
       if (!cv.offsetParent && !(cv.id === 'fpViz' && fpOpen)) continue;
       if (drawViz(cv, ts)) vizMoving = true;
     }
@@ -1131,7 +1187,7 @@ function thumbFor(t) {
 const thumbDiv = t => `<div class="thumb" style="background-image:url('${thumbFor(t)}')"></div>`;
 function rowHTML(t, i) {
   const top = S.view === 'top';
-  return `<div class="row" data-id="${esc(t.id)}" data-i="${i}">` +
+  return `<div class="row" data-id="${esc(t.id)}" data-i="${i}"${i < 16 ? ` style="--d:${i}"` : ''}>` +
     `<div class="num${top ? ' rank' + (i < 3 ? ' r' + (i + 1) : '') : ''}">${i + 1}</div>` +
     thumbDiv(t) +
     `<div class="meta"><div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist || 'Noma\'lum ijrochi')}</div></div>` +
@@ -1182,7 +1238,7 @@ function renderList() {
   list.classList.remove('hidden');
   $('.list-head').classList.add('hidden');      // the header now lives inside the list (sticky)
   const head = `<div class="list-head in"><span>#</span><span></span><span>Nomi</span><span>Albom</span><span>${S.view === 'top' ? 'Tinglangan' : 'Format'}</span><span class="r">Vaqt</span><span></span></div>`;
-  list.innerHTML = carouselsHTML() + head + ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('');
+  list.innerHTML = nowCardHTML() + carouselsHTML() + head + ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('');
   markPlaying();
 }
 /* ---------- library carousels: "Siz uchun" + "Yaqinda qo'shilgan" ---------- */
@@ -1279,9 +1335,41 @@ function renderNext() {
   }).join('');
 }
 
+
+/* ---------- phone: "Hozir ijroda" card on top of the list ---------- */
+const isPhone = () => matchMedia('(max-width: 820px)').matches;
+function nowCardHTML() {
+  const t = cur();
+  if (!t || !isPhone() || S.query.trim() || !['library', 'top', 'favorites'].includes(S.view)) return '';
+  const art = $('.p-art') && $('.p-art').getAttribute('src') ? $('.p-art').getAttribute('src') : thumbFor(t);
+  return `<div class="m-now" data-act="open-full">` +
+    `<div class="m-now-bg" style="background-image:${$('#fpBg').style.backgroundImage || 'none'}"></div>` +
+    `<div class="m-now-art"><div class="bass-glow"></div><div class="boom-ring"></div><img class="cur-art bass-art" src="${art}" alt=""></div>` +
+    `<div class="m-now-meta"><small>HOZIR IJRODA · ${esc(FXP.label)}</small><b class="cur-title">${esc(t.title)}</b>` +
+    `<span class="cur-artist">${esc(t.artist || 'Noma\'lum ijrochi')}</span><canvas class="viz" id="mViz"></canvas></div></div>`;
+}
+function syncNowCard() {
+  if (!isPhone() || !['library', 'top', 'favorites'].includes(S.view)) return;
+  const card = $('.m-now');
+  if (!card && cur()) { renderList(); return; }
+  if (card) { const bg = $('.m-now-bg', card); if (bg) bg.style.backgroundImage = $('#fpBg').style.backgroundImage; }
+}
+/* sliding indicator under the active tab */
+function moveTabPill() {
+  const pill = $('#tabPill'), a = $('#tabbar .tab.active');
+  if (!pill || !a) return;
+  pill.style.width = a.offsetWidth + 'px';
+  pill.style.transform = `translateX(${a.offsetLeft}px)`;
+}
+window.addEventListener('resize', moveTabPill);
+
 function setView(v) {
   S.view = v;
   $$('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  moveTabPill();
+  const lst = $('#trackList'), main = $('#main');
+  main.classList.remove('view-enter'); void main.offsetWidth; main.classList.add('view-enter');
+  lst.classList.add('stagger'); clearTimeout(setView.t); setView.t = setTimeout(() => lst.classList.remove('stagger'), 900);
   renderList();
   $('#trackList').scrollTop = 0;
   if (v === 'queue' && S.currentId) {
@@ -1686,7 +1774,7 @@ async function loadLyrics(t) {
 }
 function lyricsTick(force = false) {
   if (!ly.open || !ly.lines || !ly.lines.length) return;
-  const time = audio.currentTime + 0.2;
+  const time = mediaTime() + 0.2 - audioLatency();
   let lo = 0, hi = ly.lines.length - 1, idx = -1;
   while (lo <= hi) { const mid = (lo + hi) >> 1; if (ly.lines[mid].t <= time) { idx = mid; lo = mid + 1; } else hi = mid - 1; }
   if (idx === ly.idx && !force) return;
@@ -2070,6 +2158,8 @@ function bind() {
       addDesktopItems(items);
     });
     NAVO.onProgress(d => {
+      if (d.phase === 'codec') { toast('Bu format uchun kodek yuklab olinmoqda (~29 MB, bir martalik)…', true); return; }
+      if (d.phase === 'codec-done') { toast('Kodek o\'rnatildi ✓'); return; }
       if (d.phase === 'tags' && (d.total <= 3 || d.done >= d.total)) return; // tiny jobs: no sticky toast
       toast(d.phase === 'scan' ? `Papka skanerlanmoqda… ${d.found} ta fayl` : `Teglar o'qilmoqda… ${d.done}/${d.total}`, true);
     });
@@ -2117,7 +2207,7 @@ async function boot() {
   loadSettings();
   // Weak or software-only GPU -> start in lite mode automatically (user can override).
   if (IS_DESKTOP && NAVO.gpuInfo) { try { S.autoLite = !(await NAVO.gpuInfo()).accelerated; } catch { /* */ } }
-  else if (!IS_DESKTOP) S.autoLite = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 3;
+  else if (!IS_DESKTOP) S.autoLite = (navigator.deviceMemory || 8) <= 2 || (navigator.hardwareConcurrency || 8) <= 2;
   applyLite();
   applyFx();
   buildEq();
@@ -2149,6 +2239,10 @@ async function boot() {
   renderNext();
   // find pictures for songs that were added without one
   setTimeout(() => S.order.forEach(queueCover), 1500);
+  // intro: let the logo animation play briefly, then reveal the app
+  moveTabPill();
+  const sp = $('#splash');
+  if (sp) setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 700); }, Math.max(0, 650 - performance.now()));
 
   const CapApp = window.capacitorApp && window.capacitorApp.App;
   if (!IS_DESKTOP && CapApp && CapApp.getLaunchUrl) {

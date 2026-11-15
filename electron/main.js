@@ -56,12 +56,36 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 /* ---------- ffmpeg transcoding for exotic formats ---------- */
+/* ffmpeg is NOT shipped inside the installer (it would add ~83 MB). It is only needed for
+   rare formats (WMA, APE, DSD, ...), so it is fetched once, on first use, into the app's
+   data folder. In development the copy from the ffmpeg-static package is used. */
+const FFMPEG_TAG = 'b6.1.1';
+const ffExe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+const ffLocal = () => path.join(app.getPath('userData'), 'codec', ffExe);
+let ffReady = null;
 function ffmpegBin() {
-  try {
-    return require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
-  } catch {
-    return 'ffmpeg';
-  }
+  if (ffReady) return ffReady;
+  ffReady = (async () => {
+    if (fs.existsSync(ffLocal())) return ffLocal();
+    try {                                   // dev / unpacked builds
+      const p = require('ffmpeg-static');
+      if (p && fs.existsSync(p)) return p;
+    } catch { /* not bundled */ }
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+    const url = `https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_TAG}/ffmpeg-${process.platform}-${arch}.gz`;
+    if (win) win.webContents.send('scan-progress', { phase: 'codec' });
+    const r = await net.fetch(url);
+    if (!r.ok) throw new Error('codec download failed: ' + r.status);
+    const gz = Buffer.from(await r.arrayBuffer());
+    const bin = require('zlib').gunzipSync(gz);
+    fs.mkdirSync(path.dirname(ffLocal()), { recursive: true });
+    const tmp = ffLocal() + '.part';
+    fs.writeFileSync(tmp, bin, { mode: 0o755 });
+    fs.renameSync(tmp, ffLocal());
+    if (win) win.webContents.send('scan-progress', { phase: 'codec-done' });
+    return ffLocal();
+  })().catch(e => { ffReady = null; throw e; });
+  return ffReady;
 }
 const cacheDir = path.join(app.getPath('temp'), 'navo-cache');
 const pending = new Map();
@@ -72,10 +96,12 @@ async function transcode(src) {
   const out = path.join(cacheDir, key + '.flac');
   if (fs.existsSync(out)) return out;
   if (pending.has(key)) return pending.get(key);
+  const bin = await ffmpegBin();
+  if (pending.has(key)) return pending.get(key);
   const job = new Promise((resolve, reject) => {
     fs.mkdirSync(cacheDir, { recursive: true });
     const tmp = out + '.part';
-    const p = spawn(ffmpegBin(), ['-v', 'error', '-y', '-i', src, '-vn', '-map', '0:a:0', '-c:a', 'flac',
+    const p = spawn(bin, ['-v', 'error', '-y', '-i', src, '-vn', '-map', '0:a:0', '-c:a', 'flac',
       '-compression_level', '0', '-f', 'flac', tmp], { windowsHide: true });
     let err = '';
     p.stderr.on('data', d => { err += d; });
@@ -327,7 +353,7 @@ ipcMain.handle('show-in-folder', (_e, p) => { if (typeof p === 'string' && fs.ex
 /* ---------- Windows "Open with" registration (per-user, no admin needed) ---------- */
 const ASSOC_EXT = AUDIO_EXT.filter(e => e !== 'mp4' && e !== '3gp' && e !== 'webm');
 function registerOpenWith() {
-  if (process.platform !== 'win32' || !app.isPackaged) return;
+  if (process.platform !== 'win32' || !app.isPackaged || process.env.NAVO_SHOT) return;
   const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
   const marker = path.join(app.getPath('userData'), 'assoc.json');
   const sig = JSON.stringify({ exe, n: ASSOC_EXT.length, v: 3 });
@@ -412,6 +438,16 @@ async function devScreenshots() {
   const js = code => win.webContents.executeJavaScript(code, true).catch(e => console.error(e));
   win.webContents.on('console-message', e => { if (e.level === 'error' || e.level === 'warning') console.log('CONSOLE', e.level, e.message); });
   await wait(6000);
+  if (process.env.NAVO_CODEC) {
+    // packaged-build check: a WMA file must trigger the one-time codec download and then play
+    for (let i = 0; i < 40; i++) {
+      await wait(1500);
+      const st = await js(`document.title + ' | t=' + document.querySelector('.t-cur').textContent + ' | toast=' + document.querySelector('#toast').textContent`);
+      console.log('CODEC', i, st, '| codec file:', fs.existsSync(ffLocal()));
+      if (/t=0:0[3-9]/.test(st)) break;
+    }
+    app.quit(); return;
+  }
   if (process.env.NAVO_SITE) {
     // Clean marketing screenshots for the download site
     win.setSize(1440, 900);
@@ -454,7 +490,7 @@ async function devScreenshots() {
   }
   if (process.env.NAVO_PERF) {
     // Real, visible window: sweep the mouse over the track list while music + bass FX run, measure frames.
-    win.setBounds({ x: 40, y: 40, width: 1320, height: 840 });
+    win.setBounds({ x: 40, y: 40, width: +process.env.NAVO_W || 1320, height: +process.env.NAVO_H || 840 });
     win.showInactive();
     await js(`!document.querySelector('.row.playing') && document.querySelector('.row') && document.querySelector('.row').click()`);
     await wait(1500);

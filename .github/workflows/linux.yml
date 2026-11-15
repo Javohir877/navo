@@ -1,0 +1,39 @@
+# Builds the Linux versions (AppImage + .deb) on GitHub's Ubuntu machines and
+# attaches them to the release. Runs automatically when a release is published,
+# or by hand from the Actions tab (it then uploads to the latest release).
+name: Linux build
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build AppImage and .deb
+        run: npx electron-builder --linux AppImage deb --publish never
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [ -z "$TAG" ]; then TAG=$(gh release view --json tagName -q .tagName); fi
+          cp dist/*.AppImage Navo.AppImage
+          cp dist/*.deb Navo.deb
+          gh release upload "$TAG" "Navo.AppImage#Linux AppImage (Navo.AppImage)" "Navo.deb#Linux Debian/Ubuntu (Navo.deb)" --clobber

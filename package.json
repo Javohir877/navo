@@ -1,10 +1,13 @@
 {
   "name": "navo",
   "productName": "Navo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Navo — chiroyli, blurli musiqa pleyeri (Windows + Android)",
   "main": "electron/main.js",
-  "author": "Navo",
+  "author": {
+    "name": "Javohir877",
+    "url": "https://github.com/Javohir877"
+  },
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -13,10 +16,10 @@
     "icons": "electron scripts/make-icons.js",
     "build:exe": "electron-builder --win",
     "cap:sync": "npx cap sync android",
-    "build:apk": "npx cap sync android && cd android && gradlew.bat assembleDebug"
+    "build:apk": "npx cap sync android && cd android && gradlew.bat assembleDebug",
+    "build:linux": "electron-builder --linux AppImage deb"
   },
   "dependencies": {
-    "ffmpeg-static": "^5.2.0",
     "music-metadata": "^11.0.0"
   },
   "devDependencies": {
@@ -26,7 +29,8 @@
     "@capacitor/core": "^7.0.0",
     "electron": "^38.0.0",
     "electron-builder": "^26.0.0",
-    "jsmediatags": "^3.9.7"
+    "jsmediatags": "^3.9.7",
+    "ffmpeg-static": "^5.2.0"
   },
   "build": {
     "appId": "uz.navo.player",
@@ -39,9 +43,6 @@
       "electron/**",
       "www/**",
       "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/ffmpeg-static/**"
     ],
     "win": {
       "icon": "build/icon.png",
@@ -71,11 +72,55 @@
     },
     "portable": {
       "artifactName": "Navo-${version}-portable.exe"
-    }
+    },
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Audio",
+      "icon": "build/icon.png",
+      "maintainer": "Javohir877",
+      "synopsis": "Premium musiqa pleyeri",
+      "description": "Navo — barcha formatlarni o'ynaydigan, bass bilan sinxron effektli musiqa pleyeri.",
+      "mimeTypes": [
+        "audio/mpeg",
+        "audio/flac",
+        "audio/x-flac",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/ogg",
+        "audio/opus",
+        "audio/mp4",
+        "audio/x-m4a",
+        "audio/aac",
+        "audio/x-ms-wma",
+        "audio/x-ape",
+        "audio/aiff",
+        "audio/x-aiff"
+      ],
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "Navo"
+        }
+      }
+    },
+    "appImage": {
+      "artifactName": "Navo-${version}.AppImage"
+    },
+    "deb": {
+      "artifactName": "Navo_${version}_amd64.deb"
+    },
+    "afterPack": "scripts/after-pack.js"
   },
   "allowScripts": {
     "electron@38.8.6": true,
     "ffmpeg-static@5.3.0": true,
     "electron-winstaller@5.4.0": true
-  }
+  },
+  "homepage": "https://javohir877.github.io/navo/"
 }

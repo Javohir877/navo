@@ -10,3 +10,5 @@ build-exe.log
 .claude/
 android/app/src/main/assets/public/
 android/capacitor-cordova-android-plugins/build/
+www/__demo/
+release-out/
