@@ -190,3 +190,11 @@ footer a { text-decoration: none; color: var(--text-2); }
 .steps { grid-template-columns: repeat(3, 1fr); }
 .step-col code { font-size: 13px; padding: 2px 7px; border-radius: 6px; background: rgba(255, 255, 255, .08); color: var(--text); }
 @media (max-width: 1000px) { .steps { grid-template-columns: 1fr; } }
+/* hero: primary + two compact platform buttons on one line */
+.cta { align-items: stretch; }
+.cta .btn-ghost { padding: 14px 18px; gap: 10px; }
+.cta .btn-ghost svg { width: 22px; height: 22px; }
+.cta .btn-ghost small { display: none; }
+.cta .btn-ghost b { font-size: 15px; }
+@media (max-width: 640px) { .cta .btn-ghost { flex: 1; width: auto; justify-content: center; } }
+@media (min-width: 1001px) { .hero { grid-template-columns: 1.12fr 1fr; } .cta { gap: 10px; } }

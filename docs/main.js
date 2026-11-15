@@ -14,9 +14,16 @@
     $('#altDlSub').textContent = 'Kompyuter uchun · 83 MB';
     $('#altDl svg').innerHTML = '<path d="M3 5.5 10.5 4.5v7H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/>';
   } else if (/Linux/i.test(ua) && !/Android/i.test(ua)) {
+    // Linux visitor: Linux first, Windows moves to the third button
+    const winSvg = $('#mainDl svg').innerHTML;
     $('#mainDl').href = REL + 'Navo.AppImage';
     $('#mainDlLabel').textContent = 'Linux uchun yuklab olish';
-    $('#mainDlSub').textContent = 'AppImage · 64-bit';
+    $('#mainDlSub').textContent = 'AppImage · 78 MB';
+    $('#mainDl svg').innerHTML = $('#linDl svg').innerHTML;
+    $('#linDl').href = REL + 'Navo-Setup.exe';
+    $('#linDlLabel').textContent = 'Windows';
+    $('#linDlSub').textContent = 'Windows 10 / 11 · 83 MB';
+    $('#linDl svg').innerHTML = winSvg;
   } else if (/iPhone|iPad|Macintosh/i.test(ua)) {
     $('#mainDlSub').textContent = 'macOS va iOS versiyasi tez orada';
   }
