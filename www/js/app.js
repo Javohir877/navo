@@ -124,6 +124,95 @@ function setCompact(on, quiet) {
   if (b) { b.setAttribute('aria-pressed', S.compact); b.title = S.compact ? 'Panellarni ochish (Ctrl+B)' : 'Panellarni yig\'ish (Ctrl+B)'; }
   if (!quiet) persist();
 }
+/* ---------- Mini player (desktop): small always-on-top window ---------- */
+let miniOn = false;
+async function setMini(on) {
+  if (!IS_DESKTOP || !NAVO.miniMode || on === miniOn) return;
+  miniOn = on;
+  if (on) closeFull();
+  document.documentElement.classList.toggle('mini', on);
+  await NAVO.miniMode(on);
+}
+
+/* ---------- Updates and "what's new" ---------- */
+// Android: navigating to an outside address makes Capacitor hand it to the phone's browser
+function openOutside(url) { location.href = url; }
+const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
+const NEWS = {
+  '1.0.4': [
+    'Mini pleyer: kichik oyna boshqa oynalar ustida turadi (Ctrl+Shift+M yoki pleyerdagi tugma)',
+    'Panellarni yig\'ish: sarlavha yonidagi tugma yoki Ctrl+B — faqat kutubxona va pleyer qoladi',
+    'Navo yangi versiya chiqqanini o\'zi aytadi',
+    'Muqova va qo\'shiq matni ko\'proq joydan qidiriladi, phonk nomlari ham tushuniladi',
+    'Concert Hall effekti, tezkor tugmalar ro\'yxati (?) va kamroq RAM',
+  ],
+};
+const verNum = v => String(v || '0').replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+const verGt = (a, b) => { const x = verNum(a), y = verNum(b); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+let appVer = '';
+async function getAppVersion() {
+  if (appVer) return appVer;
+  try {
+    if (IS_DESKTOP) appVer = await NAVO.appVersion();
+    else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
+  } catch { /* */ }
+  return appVer || '1.0.4';
+}
+function updateUrl() {
+  if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
+  const ua = navigator.userAgent;
+  return RELEASES + (/Linux/i.test(ua) ? 'Navo.AppImage' : 'Navo-Setup.exe');
+}
+function openUpdate() {
+  const url = updateUrl();
+  if (IS_DESKTOP) NAVO.openRelease(url); else openOutside(url);
+  toast('Yuklab olingach, eski Navo ustidan o\'rnating — qo\'shiqlaringiz saqlanib qoladi', true);
+  setTimeout(() => hideToast(0), 7000);
+}
+async function checkUpdate(manual) {
+  const cur = await getAppVersion();
+  $('#aboutState').textContent = 'Tekshirilmoqda…';
+  let j = null;
+  try { j = await httpJson('https://api.github.com/repos/Javohir877/navo/releases/latest'); } catch { /* offline */ }
+  try { localStorage.setItem('navo.updAt', String(Date.now())); } catch { /* */ }
+  const latest = j && j.tag_name ? j.tag_name.replace(/^v/, '') : '';
+  if (!latest) { $('#aboutState').textContent = 'Tekshirib bo\'lmadi — internetni tekshiring'; if (manual) toast('Yangilanishni tekshirib bo\'lmadi'); return; }
+  if (verGt(latest, cur)) {
+    $('#aboutState').textContent = `Yangi versiya bor: ${latest}`;
+    let skip = ''; try { skip = localStorage.getItem('navo.updSkip') || ''; } catch { /* */ }
+    if (manual || skip !== latest) showUpdateCard(latest);
+  } else {
+    $('#aboutState').textContent = 'Sizda eng so\'nggi versiya';
+    if (manual) toast('Sizda eng so\'nggi versiya ✓');
+  }
+}
+function showUpdateCard(latest) {
+  $('#ucTitle').textContent = `Navo ${latest} chiqdi`;
+  $('#ucSub').textContent = 'Yangi imkoniyatlar va tuzatishlar';
+  const c = $('#updateCard');
+  c.dataset.ver = latest;
+  c.classList.remove('hidden');
+}
+async function showNewsIfUpdated() {
+  const cur = await getAppVersion();
+  $('#aboutVer').textContent = cur;
+  let seen = null; try { seen = localStorage.getItem('navo.seenVer'); } catch { /* */ }
+  try { localStorage.setItem('navo.seenVer', cur); } catch { /* */ }
+  // first run ever: no "what's new"; after an update: show what changed
+  // seenVer is new in 1.0.4, so someone who already has songs is coming from an older version
+  const updated = seen ? verGt(cur, seen) : S.tracks.size > 0;
+  if (updated && NEWS[cur]) {
+    $('#newsTitle').textContent = `Navo ${cur} — yangi nima bor`;
+    $('#newsList').innerHTML = NEWS[cur].map(x => `<li>${esc(x)}</li>`).join('');
+    $('#newsModal').classList.remove('hidden');
+  }
+  let last = 0; try { last = +localStorage.getItem('navo.updAt') || 0; } catch { /* */ }
+  if (Date.now() - last > 6 * 3600e3) setTimeout(() => checkUpdate(false), 8000);
+  else $('#aboutState').textContent = 'Yaqinda tekshirilgan';
+}
+function openKeys() { $('#keysModal').classList.remove('hidden'); }
+function closeKeys() { $('#keysModal').classList.add('hidden'); }
+
 function persist() {
   clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
@@ -1966,7 +2055,7 @@ function lyNotFound(msg) {
 function lyGoogle() {
   const t = cur(); if (!t) return;
   const q = `${firstArtist(t.artist)} ${cleanTitle(t.title)} lyrics`.trim();
-  if (IS_DESKTOP) NAVO.openSearch(q, false); else window.open('https://www.google.com/search?q=' + encodeURIComponent(q), '_blank');
+  if (IS_DESKTOP) NAVO.openSearch(q, false); else openOutside('https://www.google.com/search?q=' + encodeURIComponent(q));
   toast('Matnni nusxalab, Navo\'da «Matnni qo\'yish» ni bosing');
 }
 async function openLyEdit() {
@@ -2213,6 +2302,7 @@ function closeMenu() {
 let fullHideTimer = 0;
 function openFull() {
   if (!S.currentId) return;
+  if (miniOn) { setMini(false); return; }
   const fp = $('#fullPlayer');
   clearTimeout(fullHideTimer);
   if (!fp.classList.contains('shown')) { fp.classList.add('shown'); void fp.offsetWidth; }   // reflow so the slide-in still plays
@@ -2264,6 +2354,8 @@ function bind() {
     const act = actEl.dataset.act;
     switch (act) {
       case 'toggle': toggle(); break;
+      case 'mini': setMini(!miniOn); break;
+      case 'expand-rail': if (S.compact) setCompact(false); break;
       case 'next': next(); break;
       case 'prev': prev(); break;
       case 'shuffle': toggleShuffle(); break;
@@ -2394,7 +2486,7 @@ function bind() {
   $('#coverGoogle').addEventListener('click', () => {
     const q = `${cleanTitle($('#editTitle').value)} ${firstArtist($('#editArtist').value)} cover`.trim();
     if (IS_DESKTOP) { NAVO.openSearch(q, true); toast('Rasmni nusxalang (Copy image) va shu oynada Ctrl+V bosing', true); setTimeout(() => hideToast(0), 6000); }
-    else { window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q), '_blank'); toast('Rasmni yuklab oling va «Rasm tanlash» bilan qo\'shing'); }
+    else { openOutside('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q)); toast('Rasmni yuklab oling va «Rasm tanlash» bilan qo\'shing'); }
   });
   // paste an image (e.g. copied from Google / Spotify in the browser) straight into the dialog
   document.addEventListener('paste', async e => {
@@ -2410,6 +2502,14 @@ function bind() {
   });
   $('#editRemoveArt').addEventListener('click', () => { const t = S.tracks.get(editId); editArt = null; if (t) $('#editArt').src = placeholderArt(t); });
   $('#editCancel').addEventListener('click', closeEdit);
+  $('#ucGo').addEventListener('click', () => { $('#updateCard').classList.add('hidden'); openUpdate(); });
+  $('#ucLater').addEventListener('click', () => { const c = $('#updateCard'); c.classList.add('hidden'); try { localStorage.setItem('navo.updSkip', c.dataset.ver || ''); } catch { /* */ } });
+  $('#checkUpdate').addEventListener('click', () => checkUpdate(true));
+  $('#newsOk').addEventListener('click', () => $('#newsModal').classList.add('hidden'));
+  $('#newsModal').addEventListener('pointerdown', e => { if (e.target.id === 'newsModal') $('#newsModal').classList.add('hidden'); });
+  $('#showKeys').addEventListener('click', openKeys);
+  $('#keysOk').addEventListener('click', closeKeys);
+  $('#keysModal').addEventListener('pointerdown', e => { if (e.target.id === 'keysModal') closeKeys(); });
   if (IS_DESKTOP) {
     $('#collapseBtn').addEventListener('click', () => setCompact(!S.compact));
     // rail mode shows icons only, so every item gets its name as a tooltip
@@ -2449,10 +2549,12 @@ function bind() {
     else if (e.key === 'ArrowLeft') { e.preventDefault(); e.ctrlKey ? prev() : seekTo(audio.currentTime - 5); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); S.volume = Math.min(1, S.volume + 0.05); S.muted = false; applyVolume(); persist(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); S.volume = Math.max(0, S.volume - 0.05); applyVolume(); persist(); }
-    else if (e.key.toLowerCase() === 'm') { S.muted = !S.muted; applyVolume(); persist(); }
+    else if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.metaKey) { S.muted = !S.muted; applyVolume(); persist(); }
     else if (e.key.toLowerCase() === 'f' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#search').focus(); }
     else if (e.key.toLowerCase() === 'b' && (e.ctrlKey || e.metaKey) && IS_DESKTOP) { e.preventDefault(); setCompact(!S.compact); }
-    else if (e.key === 'Escape') { if (!$('#editModal').classList.contains('hidden')) closeEdit(); else { closeMenu(); closeFull(); } }
+    else if (e.key.toLowerCase() === 'm' && (e.ctrlKey || e.metaKey) && e.shiftKey && IS_DESKTOP) { e.preventDefault(); setMini(!miniOn); }
+    else if (e.key === '?' && IS_DESKTOP) { $('#keysModal').classList.contains('hidden') ? openKeys() : closeKeys(); }
+    else if (e.key === 'Escape') { if (!$('#editModal').classList.contains('hidden')) closeEdit(); else if (!$('#keysModal').classList.contains('hidden')) closeKeys(); else if (!$('#newsModal').classList.contains('hidden')) $('#newsModal').classList.add('hidden'); else if (miniOn) setMini(false); else { closeMenu(); closeFull(); } }
     else if (e.key.toLowerCase() === 'l' && S.currentId) { if (!$('#fullPlayer').classList.contains('open')) openFull(); toggleLyrics(); }
   });
 
@@ -2581,6 +2683,6 @@ async function boot() {
 }
 
 // hooks for the automated checks in electron/main.js (test runs only)
-if (IS_DESKTOP && NAVO.devTest) window.__navo = { coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S };
-boot();
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S };
+boot().then(() => showNewsIfUpdated()).catch(() => {});
 })();

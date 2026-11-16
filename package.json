@@ -1,7 +1,7 @@
 {
   "name": "navo",
   "productName": "Navo",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Navo — chiroyli, blurli musiqa pleyeri (Windows + Android)",
   "main": "electron/main.js",
   "author": {
@@ -10,112 +10,8 @@
   },
   "license": "MIT",
   "private": true,
-  "scripts": {
-    "postinstall": "node scripts/copy-vendor.js",
-    "start": "electron .",
-    "icons": "electron scripts/make-icons.js",
-    "build:exe": "electron-builder --win",
-    "cap:sync": "npx cap sync android",
-    "build:apk": "npx cap sync android && cd android && gradlew.bat assembleDebug",
-    "build:linux": "electron-builder --linux AppImage deb"
-  },
   "dependencies": {
     "music-metadata": "^11.0.0"
-  },
-  "devDependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/app": "^7.0.0",
-    "@capacitor/cli": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
-    "electron": "^38.0.0",
-    "electron-builder": "^26.0.0",
-    "jsmediatags": "^3.9.7",
-    "ffmpeg-static": "^5.2.0"
-  },
-  "build": {
-    "appId": "uz.navo.player",
-    "productName": "Navo",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "electron/**",
-      "www/**",
-      "package.json"
-    ],
-    "win": {
-      "icon": "build/icon.png",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "Navo",
-      "artifactName": "Navo-Setup-${version}.exe",
-      "include": "build/installer.nsh"
-    },
-    "portable": {
-      "artifactName": "Navo-${version}-portable.exe"
-    },
-    "compression": "maximum",
-    "electronLanguages": [
-      "en-US"
-    ],
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Audio",
-      "icon": "build/icon.png",
-      "maintainer": "Javohir877",
-      "synopsis": "Premium musiqa pleyeri",
-      "description": "Navo — barcha formatlarni o'ynaydigan, bass bilan sinxron effektli musiqa pleyeri.",
-      "mimeTypes": [
-        "audio/mpeg",
-        "audio/flac",
-        "audio/x-flac",
-        "audio/wav",
-        "audio/x-wav",
-        "audio/ogg",
-        "audio/opus",
-        "audio/mp4",
-        "audio/x-m4a",
-        "audio/aac",
-        "audio/x-ms-wma",
-        "audio/x-ape",
-        "audio/aiff",
-        "audio/x-aiff"
-      ],
-      "desktop": {
-        "entry": {
-          "StartupWMClass": "Navo"
-        }
-      }
-    },
-    "appImage": {
-      "artifactName": "Navo-${version}.AppImage"
-    },
-    "deb": {
-      "artifactName": "Navo_${version}_amd64.deb"
-    },
-    "afterPack": "scripts/after-pack.js"
   },
   "allowScripts": {
     "electron@38.8.6": true,

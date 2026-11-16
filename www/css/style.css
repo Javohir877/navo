@@ -912,3 +912,70 @@ h1, h2, h3, .title-wrap h1, .brand b, .fp-tt h2, .np-meta h3, .shelf-head h3, .m
 
 /* the rail toggle has nothing to fold on the phone-sized layout */
 @media (max-width: 820px) { .collapse-btn { display: none !important; } .compact #app { grid-template-columns: minmax(0, 1fr); padding: 0 12px; } }
+
+/* ============================================================
+   1.0.4: clearer rail toggle, update card, what's new, keys, mini player
+   ============================================================ */
+.collapse-btn { width: 38px; height: 38px; margin: 0 4px 0 -4px; border-radius: 12px; color: var(--text-2); background: var(--glass-2); border: 1px solid var(--stroke); }
+.collapse-btn:hover { color: #fff; background: var(--glass-3); }
+.compact .collapse-btn { color: var(--accent); border-color: rgba(var(--accent-rgb), .45); }
+.compact .brand img { cursor: pointer; }
+
+.update-card { position: fixed; z-index: 88; right: 24px; bottom: calc(var(--player-h) + 44px + var(--sab)); display: flex; align-items: center; gap: 14px;
+  max-width: min(460px, calc(100vw - 32px)); padding: 14px 14px 14px 16px; border-radius: 20px; background: rgba(30, 26, 48, .96);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .9), 0 0 0 1px rgba(var(--accent-rgb), .25); animation: pop .3s var(--ease); }
+.update-card.hidden { display: none; }
+.uc-ico { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+.uc-text { min-width: 0; }
+.uc-text b { display: block; font-size: 14.5px; }
+.uc-text small { color: var(--text-3); font-size: 12.5px; }
+.uc-btns { display: flex; gap: 8px; margin-left: auto; }
+.is-mobile .update-card { left: 12px; right: 12px; bottom: calc(var(--sab) + 160px); flex-wrap: wrap; }
+.is-mobile .uc-btns { width: 100%; justify-content: flex-end; }
+
+.news-card { width: min(520px, 100%); }
+.news-list { list-style: none; display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; }
+.news-list li { position: relative; padding-left: 26px; font-size: 14.5px; line-height: 1.5; color: var(--text-2); }
+.news-list li::before { content: ""; position: absolute; left: 4px; top: .5em; width: 9px; height: 9px; border-radius: 50%; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: 0 0 10px rgba(var(--accent-rgb), .7); }
+
+.keys-card { width: min(480px, 100%); }
+.keys-list { display: grid; grid-template-columns: auto 1fr; gap: 10px 20px; align-items: center; margin: 0; }
+.keys-list dt { display: flex; gap: 5px; justify-content: flex-end; }
+.keys-list dd { margin: 0; font-size: 14px; color: var(--text-2); }
+kbd { display: inline-grid; place-items: center; min-width: 30px; height: 28px; padding: 0 8px; border-radius: 8px; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--text);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .05)); border: 1px solid var(--stroke); box-shadow: 0 2px 0 rgba(0, 0, 0, .4); }
+
+.about-card { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 18px; padding: 16px; border-radius: 18px; background: var(--glass-2); border: 1px solid var(--stroke); }
+.about-card img { width: 44px; height: 44px; }
+.about-meta { margin-right: auto; min-width: 0; }
+.about-meta b { display: block; font-size: 15px; }
+.about-meta small { color: var(--text-3); font-size: 12.5px; }
+
+/* ---------- mini player: the window is only the player ---------- */
+.mini { --titlebar: 34px; --player-h: 172px; }
+.mini #app, .mini #nowPanel, .mini #fxLayer, .mini #edgeGlow, .mini #tbTrack, .mini .update-card, .mini #toast { display: none !important; }
+.mini #titlebar { padding-left: 14px; }
+.mini #player { left: 8px; right: 8px; top: calc(var(--titlebar) + 2px); bottom: 8px; height: auto; border-radius: 20px; padding: 12px 14px;
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 8px 10px; -webkit-app-region: drag; }
+.mini #player button, .mini #player input, .mini #player .p-art { -webkit-app-region: no-drag; }
+.mini .p-left { grid-column: 1; grid-row: 1; min-width: 0; }
+.mini .p-right { grid-column: 2; grid-row: 1; gap: 0; }
+.mini .p-right > :not(.mini-btn) { display: none; }
+.mini .mini-btn { color: var(--accent); }
+.mini .p-center { grid-column: 1 / -1; grid-row: 2; gap: 4px; }
+.mini .controls { gap: 14px; }
+.mini .controls .shuffle-btn, .mini .controls .repeat-btn { display: none; }
+.mini .seek-row { gap: 10px; }
+.mini .p-art-wrap, .mini .p-art { width: 56px; height: 56px; }
+/* the mini window is narrow, so undo the phone layout rules that would otherwise kick in */
+.mini #titlebar { display: flex !important; }
+.mini #tabbar, .mini .mini-prog, .mini #fullPlayer { display: none !important; }
+.mini #player { left: 8px; right: 8px; top: calc(var(--titlebar) + 2px); bottom: 8px; height: auto; padding: 12px 14px 10px; border-radius: 20px;
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 6px 10px; }
+.mini .p-right { display: flex !important; }
+.mini .p-center .seek-row { display: flex !important; }
+.mini .p-center [data-act=prev] { display: grid !important; }
+.mini .p-center .play-btn { width: 46px; height: 46px; }
+.mini .p-meta .cur-title { font-size: 15px; }
+.mini .update-card { display: none !important; }
+.uc-text small { display: block; white-space: nowrap; }

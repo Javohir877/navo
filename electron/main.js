@@ -312,8 +312,36 @@ ipcMain.handle('open-search', (_e, q, images) => {
   shell.openExternal('https://www.google.com/search?' + (images ? 'tbm=isch&' : '') + 'q=' + encodeURIComponent(String(q || '').slice(0, 200)));
 });
 
+ipcMain.handle('app-version', () => app.getVersion());
+// Opens Navo's own download / release pages in the browser (nothing else).
+ipcMain.handle('open-release', (_e, url) => {
+  if (typeof url === 'string' && url.startsWith('https://github.com/Javohir877/navo/')) shell.openExternal(url);
+});
+/* Mini player: a small always-on-top window with just the player */
+let normalBounds = null;
+ipcMain.handle('mini-mode', (_e, on) => {
+  if (!win || win.isDestroyed()) return false;
+  const overlay = h => { try { win.setTitleBarOverlay({ color: 'rgba(0,0,0,0)', symbolColor: '#f6f5fb', height: h }); } catch { /* not on this OS */ } };
+  if (on) {
+    if (win.isFullScreen()) win.setFullScreen(false);
+    if (win.isMaximized()) win.unmaximize();
+    normalBounds = win.getBounds();
+    win.setMinimumSize(320, 180);
+    const wa = require('electron').screen.getDisplayMatching(normalBounds).workArea;
+    win.setBounds({ x: wa.x + wa.width - 420 - 24, y: wa.y + wa.height - 232 - 24, width: 420, height: 232 }, true);
+    win.setAlwaysOnTop(true, 'floating');
+    overlay(34);
+  } else {
+    win.setAlwaysOnTop(false);
+    win.setMinimumSize(380, 620);
+    if (normalBounds) win.setBounds(normalBounds, true);
+    overlay(44);
+  }
+  return true;
+});
+
 // Small JSON fetch for the renderer, limited to the public music APIs the app uses.
-const API_HOSTS = new Set(['lrclib.net', 'itunes.apple.com', 'api.deezer.com', 'musicbrainz.org', 'api.lyrics.ovh']);
+const API_HOSTS = new Set(['lrclib.net', 'itunes.apple.com', 'api.deezer.com', 'musicbrainz.org', 'api.lyrics.ovh', 'api.github.com']);
 ipcMain.handle('http-json', async (_e, url) => {
   const u = new URL(url);
   if (u.protocol !== 'https:' || !API_HOSTS.has(u.hostname)) throw new Error('blocked host');
@@ -471,6 +499,28 @@ async function devScreenshots() {
     await js(`__navo.openLyEdit()`);
     await wait(800);
     await shot('ly-edit');
+    app.quit(); return;
+  }
+  if (process.env.NAVO_NEW) {
+    // 1.0.4 features: update card, shortcuts sheet, rail toggle, mini player
+    win.setSize(1440, 900);
+    await js(`document.querySelector('.row') && document.querySelector('.row').click(); __navo.showUpdateCard('1.0.5')`);
+    await wait(2500);
+    await shot('update');
+    await js(`document.querySelector('#updateCard').classList.add('hidden'); document.querySelector('#showKeys').click()`);
+    await wait(600);
+    await shot('keys');
+    await js(`document.querySelector('#keysOk').click(); document.querySelector('[data-view=eq]').click(); document.querySelector('.eq-card').scrollTop = 99999`);
+    await wait(700);
+    await shot('about');
+    await js(`document.querySelector('[data-view=library]').click(); document.querySelector('[data-act=mini]').click()`);
+    await wait(1500);
+    await shot('mini');
+    console.log('MINI', JSON.stringify(win.getBounds()), win.isAlwaysOnTop());
+    await js(`document.querySelector('[data-act=mini]').click()`);
+    await wait(1200);
+    console.log('BACK', JSON.stringify(win.getBounds()), win.isAlwaysOnTop());
+    await shot('back');
     app.quit(); return;
   }
   if (process.env.NAVO_MEM) {
