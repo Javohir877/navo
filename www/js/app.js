@@ -139,6 +139,11 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.0.6': [
+    "Telefonda bildirishnoma yangilandi: muqova, rangli fon, vaqt chizig'i, ❤ va yopish tugmalari",
+    "Kompyuterda vazifalar panelidagi play / pause / next tugmalari har qanday ekranda aniq ko'rinadi",
+    "Ovoz effektlari menyusi va bo'limidagi yozuvlar qalinroq va o'qishga qulay",
+  ],
   '1.0.5': [
     "Panellar yig'ilganda bass to'lqinlari menyudagi kichik muqovadan chiqadi",
   ],
@@ -159,7 +164,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.0.5';
+  return appVer || '1.0.6';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -405,6 +410,7 @@ function openFxMenu(x, y) {
   showMenu('<div class="menu-title">Audio effektlar</div>' + Object.keys(FX_PRESETS).map(n =>
     `<button data-m="${n}" class="${S.fx.preset === n ? 'sel' : ''}">${icon(S.fx.preset === n ? 'check' : 'sparkle')}${n}</button>`).join(''),
   x, y, setFxPreset);
+  $('#menu').classList.add('fx-menu');
 }
 
 function applyVolume() {
@@ -674,6 +680,7 @@ async function updateNowPlaying(t) {
   if (tok !== artToken) return;
   if (pal) setPalette(pal.hues, pal.sats);
   else { const h = 232 + hueOf((t.title || '') + (t.artist || '')) % 112; setPalette([h, h + 28, (h + 150) % 360]); }
+  nativeArt(hasArt ? img : null, pal ? pal.hues[0] : 232 + hueOf((t.title || '') + (t.artist || '')) % 112, pal ? pal.sats[0] : 0.6);
   updateMediaSession(t, hasArt ? art : null);
 }
 
@@ -703,19 +710,51 @@ if ('mediaSession' in navigator) {
 /* ---------- Android: foreground service + notification controls ---------- */
 const NativeMedia = (!IS_DESKTOP && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.capacitorExports)
   ? window.capacitorExports.registerPlugin('NavoMedia') : null;
-function nativeUpdate() {
+// The notification gets a small copy of the cover and a colour picked from it.
+const NOTE = { art: null, color: null, pending: false };
+function nativeUpdate(sendArt) {
   if (!NativeMedia) return;
   const t = cur();
   if (!t) { NativeMedia.stop().catch(() => {}); return; }
-  NativeMedia.update({ title: t.title, artist: t.artist || 'Navo', playing: S.playing }).catch(() => {});
+  const o = {
+    title: t.title, artist: t.artist || 'Navo', album: t.album || '',
+    playing: S.playing, fav: !!t.fav,
+    position: audio.currentTime || 0, rate: audio.playbackRate || 1,
+  };
+  if (isFinite(audio.duration) && audio.duration > 0) o.duration = audio.duration;
+  if (NOTE.color != null) o.color = NOTE.color;
+  if (sendArt) { if (NOTE.art) o.art = NOTE.art; else o.artReset = true; }
+  NativeMedia.update(o).catch(() => {});
+}
+function nativeArt(img, hue, sat) {
+  if (!NativeMedia) return;
+  NOTE.art = null;
+  if (img) {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 384;
+      const g = c.getContext('2d');
+      const s = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      g.drawImage(img, ((img.naturalWidth || img.width) - s) / 2, ((img.naturalHeight || img.height) - s) / 2, s, s, 0, 0, 384, 384);
+      NOTE.art = c.toDataURL('image/jpeg', 0.86);
+    } catch { /* */ }
+  }
+  // Deep enough that white text stays readable on the colourised notification.
+  const [r, gg, b] = hslToRgb(((hue % 360) + 360) % 360, Math.min(0.7, Math.max(0.4, sat)), 0.34);
+  NOTE.color = (r << 16) | (gg << 8) | b;
+  nativeUpdate(true);
 }
 if (NativeMedia) {
   NativeMedia.addListener('action', e => {
     const a = e && e.action;
     if (a === 'toggle') toggle();
+    else if (a === 'play') { if (!S.playing) play(); }
+    else if (a === 'pause') { if (S.playing) pause(); }
     else if (a === 'next') next();
     else if (a === 'prev') prev();
+    else if (a === 'seek') seekTo(+e.time || 0);
+    else if (a === 'fav' && S.currentId) toggleFav(S.currentId).then(() => nativeUpdate());
   });
+  ['loadedmetadata', 'seeked', 'ratechange'].forEach(ev => audio.addEventListener(ev, () => nativeUpdate()));
 }
 
 /* ---------- UI sync ---------- */
@@ -2192,6 +2231,7 @@ function showMenu(html, x, y, onPick) {
   closeMenu();
   const m = $('#menu');
   m.innerHTML = html;
+  m.classList.remove('fx-menu');
   m.classList.remove('hidden');
   const scrim = document.createElement('div');
   scrim.className = 'menu-scrim';

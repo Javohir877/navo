@@ -557,6 +557,17 @@ async function devScreenshots() {
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
     app.quit(); return;
   }
+  if (process.env.NAVO_FX) {
+    // sound-effects menu and settings section
+    win.setSize(1440, 900);
+    await js(`document.querySelector('.p-right [data-act=fx-menu], [data-act=fx-menu]').click()`);
+    await wait(500); await shot('fxmenu');
+    await js(`document.querySelector('.menu-scrim') && document.querySelector('.menu-scrim').click(); document.querySelectorAll('.modal:not(.hidden) .btn, #newsModal button').forEach(b => /Zo/.test(b.textContent) && b.click()); document.querySelector('[data-view=eq]').click()`);
+    await wait(700);
+    await js(`document.querySelector('.fx-card').scrollIntoView({ block: 'start' })`);
+    await wait(400); await shot('fxsettings');
+    app.quit(); return;
+  }
   if (process.env.NAVO_LAYOUT) {
     // layout review: normal and collapsed library at a few window sizes
     win.setSize(+process.env.NAVO_W || 1440, +process.env.NAVO_H || 900);

@@ -31,6 +31,14 @@ public class NavoMediaPlugin extends Plugin {
         instance.notifyListeners("action", o, true);
     }
 
+    static void emitSeek(double seconds) {
+        if (instance == null) return;
+        JSObject o = new JSObject();
+        o.put("action", "seek");
+        o.put("time", seconds);
+        instance.notifyListeners("action", o, true);
+    }
+
     @PluginMethod
     public void update(PluginCall call) {
         boolean playing = Boolean.TRUE.equals(call.getBoolean("playing", false));
@@ -38,7 +46,20 @@ public class NavoMediaPlugin extends Plugin {
             .setAction(PlaybackService.ACTION_UPDATE)
             .putExtra("title", call.getString("title", "Navo"))
             .putExtra("artist", call.getString("artist", ""))
-            .putExtra("playing", playing);
+            .putExtra("album", call.getString("album", ""))
+            .putExtra("playing", playing)
+            .putExtra("fav", Boolean.TRUE.equals(call.getBoolean("fav", false)));
+        Double dur = call.getDouble("duration");
+        if (dur != null && dur > 0) i.putExtra("duration", (long) (dur * 1000));
+        Double pos = call.getDouble("position");
+        if (pos != null && pos >= 0) i.putExtra("position", (long) (pos * 1000));
+        Double rate = call.getDouble("rate");
+        if (rate != null && rate > 0) i.putExtra("rate", rate.floatValue());
+        Integer color = call.getInt("color");
+        if (color != null) i.putExtra("color", 0xFF000000 | color);
+        String art = call.getString("art");
+        if (art != null) i.putExtra("art", art);
+        if (Boolean.TRUE.equals(call.getBoolean("artReset", false))) i.putExtra("artReset", true);
         try {
             if (playing && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 getContext().startForegroundService(i);

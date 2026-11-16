@@ -979,3 +979,11 @@ kbd { display: inline-grid; place-items: center; min-width: 30px; height: 28px; 
 .mini .p-meta .cur-title { font-size: 15px; }
 .mini .update-card { display: none !important; }
 .uc-text small { display: block; white-space: nowrap; }
+
+/* ---------- sound effects: bold, easier-to-read text ---------- */
+.menu.fx-menu button { font-weight: 700; }
+.menu.fx-menu .menu-title { font-weight: 800; color: var(--text-2); font-size: 13px; }
+.fx-card .eq-head b, .eq-card > .eq-head b { font-weight: 800; }
+.fx-card .eq-head small, .fx-card .set-card small { font-weight: 600; }
+.fx-card .preset, #eqPresets .preset { font-weight: 700; }
+.fx-sl, .fx-sl output { font-weight: 700; }
