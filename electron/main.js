@@ -501,6 +501,22 @@ async function devScreenshots() {
     await shot('ly-edit');
     app.quit(); return;
   }
+  if (process.env.NAVO_RAILFX) {
+    // rail mode: bass waves must start at the small cover at the bottom of the rail
+    win.setSize(1600, 960);
+    await js(`(() => { if (!document.documentElement.classList.contains('compact')) document.querySelector('#collapseBtn').click();
+      window.__beatLog = []; const r = [...document.querySelectorAll('.row')].find(x => /MTG DIAB/i.test(x.textContent)) || document.querySelector('.row'); r.click(); })()`);
+    await wait(6000);
+    for (let k = 0; k < 2; k++) {
+      const n0 = await js(`document.documentElement.dataset.booms || '0'`);
+      for (let i = 0; i < 200; i++) { await wait(25); if (await js(`document.documentElement.dataset.booms || '0'`) !== n0) break; }
+      await wait(260);
+      await shot('railfx' + k);
+    }
+    console.log('ORIGIN', await js(`'beats=' + window.__beatLog.length + ' playing=' + __navo.S.playing + ' bass=' + __navo.S.bass + ' t=' + document.querySelector('.t-cur').textContent + ' booms=' + document.documentElement.dataset.booms + ' ' + JSON.stringify([...document.querySelectorAll('#fxLayer .fx-wave')].filter(w => w.style.left).map(w => w.style.left + ',' + w.style.top)) + ' side=' + JSON.stringify(document.querySelector('.side-now img').getBoundingClientRect())`));
+    await js(`document.querySelector('#collapseBtn').click()`);
+    app.quit(); return;
+  }
   if (process.env.NAVO_NEW) {
     // 1.0.4 features: update card, shortcuts sheet, rail toggle, mini player
     win.setSize(1440, 900);

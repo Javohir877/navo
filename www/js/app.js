@@ -139,6 +139,9 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.0.5': [
+    "Panellar yig'ilganda bass to'lqinlari menyudagi kichik muqovadan chiqadi",
+  ],
   '1.0.4': [
     'Mini pleyer: kichik oyna boshqa oynalar ustida turadi (Ctrl+Shift+M yoki pleyerdagi tugma)',
     'Panellarni yig\'ish: sarlavha yonidagi tugma yoki Ctrl+B — faqat kutubxona va pleyer qoladi',
@@ -156,7 +159,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.0.4';
+  return appVer || '1.0.5';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -1181,10 +1184,14 @@ function fxOrigin() {
   const np = $('.np-art');
   const mArt = $('.m-now .bass-art');
   const mVisible = mArt && mArt.offsetParent && (() => { const r = mArt.getBoundingClientRect(); return r.bottom > 40 && r.top < innerHeight - 160; })();
-  let el = fpOpen ? fpArtEl : (np.offsetParent ? np : (mVisible ? mArt : $('.p-art')));
+  // in rail mode the now-playing panel is folded away (still laid out, just invisible),
+  // so the waves come from the small cover at the bottom of the rail instead
+  const sideArt = S.compact && $('.side-now img');
+  const npShown = np.offsetParent && !S.compact;
+  let el = fpOpen ? fpArtEl : npShown ? np : (sideArt && sideArt.offsetParent) ? sideArt : (mVisible ? mArt : $('.p-art'));
   if (fpOpen && ly.open) el = $('.ly-line.on') || $('#lyrics');
   const r = el.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2, size: Math.max(40, r.width, r.height), fp: fpOpen };
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, size: Math.max(el === sideArt ? 110 : 40, r.width, r.height), fp: fpOpen };
 }
 function fxWave(pool, o, far, s, delay, kind, dur) {
   const w = pool.waves[pool.wi++ % pool.waves.length];
