@@ -92,7 +92,7 @@ const S = {
   eq: { on: true, gains: EQ_PRESETS['Oddiy'].slice(), preset: 'Oddiy' },
   currentId: null, playing: false,
   lastTime: 0,
-  lite: null, viz: true, bass: true, netCovers: true,
+  lite: null, viz: true, bass: true, netCovers: true, compact: false,
   fx: { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
   fxStyle: 'auto',
 };
@@ -106,6 +106,7 @@ function loadSettings() {
       queue: Array.isArray(s.queue) ? s.queue : [], qIndex: typeof s.qIndex === 'number' ? s.qIndex : -1,
       unshuffled: Array.isArray(s.unshuffled) ? s.unshuffled : null,
       currentId: s.currentId || null, lastTime: s.lastTime || 0, source: s.source || 'Kutubxona',
+      compact: s.compact === true,
       lite: typeof s.lite === 'boolean' ? s.lite : null, viz: s.viz !== false, bass: s.bass !== false, netCovers: s.netCovers !== false,
       fx: s.fx && typeof s.fx.speed === 'number' ? s.fx : { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
       fxStyle: s.fxStyle || 'auto',
@@ -114,6 +115,15 @@ function loadSettings() {
   } catch { /* ignore */ }
 }
 let persistTimer = 0;
+/* Compact layout (desktop): the sidebar shrinks to an icon rail and the
+   now-playing panel closes, leaving the library and the player bar. */
+function setCompact(on, quiet) {
+  S.compact = !!on;
+  document.documentElement.classList.toggle('compact', S.compact);
+  const b = $('#collapseBtn');
+  if (b) { b.setAttribute('aria-pressed', S.compact); b.title = S.compact ? 'Panellarni ochish (Ctrl+B)' : 'Panellarni yig\'ish (Ctrl+B)'; }
+  if (!quiet) persist();
+}
 function persist() {
   clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
@@ -121,7 +131,7 @@ function persist() {
       localStorage.setItem('navo.state', JSON.stringify({
         sort: S.sort, shuffle: S.shuffle, repeat: S.repeat, volume: S.volume, muted: S.muted,
         queue: S.queue, qIndex: S.qIndex, unshuffled: S.unshuffled, currentId: S.currentId,
-        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle,
+        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, compact: S.compact, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle,
       }));
     } catch { /* storage full or blocked */ }
   }, 300);
@@ -468,9 +478,10 @@ audio.addEventListener('error', () => {
    ============================================================ */
 function hueOf(str) { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360; return h; }
 function placeholderArt(t) {
-  const h = hueOf((t.title || '') + (t.artist || '')), h2 = (h + 55) % 360;
+  // stays inside Navo's own indigo -> violet -> magenta range, so covers-less songs still look like one set
+  const h = 232 + hueOf((t.title || '') + (t.artist || '')) % 112, h2 = h + 28;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h},75%,58%)"/><stop offset="1" stop-color="hsl(${h2},80%,30%)"/></linearGradient><radialGradient id="r" cx=".3" cy=".25" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="400" height="400" fill="url(#g)"/><rect width="400" height="400" fill="url(#r)"/><g fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" transform="translate(110 110) scale(7.5)"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></g></svg>`);
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h},62%,52%)"/><stop offset="1" stop-color="hsl(${h2},70%,22%)"/></linearGradient><radialGradient id="r" cx=".28" cy=".22" r=".85"><stop offset="0" stop-color="#fff" stop-opacity=".26"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="400" height="400" fill="url(#g)"/><rect width="400" height="400" fill="url(#r)"/><g fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" transform="translate(128 128) scale(6)"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></g></svg>`);
 }
 function hsl(h, s, l) { return `hsl(${Math.round(h)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`; }
 function hslToRgb(h, s, l) {
@@ -570,7 +581,7 @@ async function updateNowPlaying(t) {
   if (hasArt && img) { try { pal = paletteFromImage(img); } catch { /* */ } }
   if (tok !== artToken) return;
   if (pal) setPalette(pal.hues, pal.sats);
-  else { const h = hueOf((t.title || '') + (t.artist || '')); setPalette([h, (h + 55) % 360, (h + 180) % 360]); }
+  else { const h = 232 + hueOf((t.title || '') + (t.artist || '')) % 112; setPalette([h, h + 28, (h + 150) % 360]); }
   updateMediaSession(t, hasArt ? art : null);
 }
 
@@ -841,13 +852,18 @@ function getBeatWorker() {
       onmessage = e => { const { id, c0, c1, sr } = e.data;
         try { const r = beatCore(c0, c1, sr); postMessage({ id, r }, [r.times.buffer, r.str.buffer, r.big.buffer]); }
         catch (err) { postMessage({ id, err: String(err) }); } };`;
-    beatWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    beatWorker = new Worker(url);
+    URL.revokeObjectURL(url);
     beatWorker.onmessage = e => { const j = beatJobs.get(e.data.id); if (j) { beatJobs.delete(e.data.id); e.data.err ? j.rej(new Error(e.data.err)) : j.res(e.data.r); } };
     beatWorker.onerror = () => { beatJobs.forEach(j => j.rej(new Error('worker'))); beatJobs.clear(); beatWorker = false; };
   } catch { beatWorker = false; }
   return beatWorker;
 }
+let beatIdle = 0;
 function runBeatCore(c0, c1, sr) {
+  clearTimeout(beatIdle);
+  beatIdle = setTimeout(() => { if (beatWorker && !beatJobs.size) { beatWorker.terminate(); beatWorker = null; } }, 30000);
   const w = getBeatWorker();
   if (!w) return Promise.resolve(beatCore(c0, c1, sr));      // fallback: same code, main thread
   return new Promise((res, rej) => {
@@ -892,7 +908,7 @@ function applyStyle() {
     (detectedStyle && detectedStyle.bpm ? ` · ~${detectedStyle.bpm} BPM` : '');
   $$('#stylePresets .preset').forEach(b => b.classList.toggle('active', b.dataset.style === (S.fxStyle || 'auto')));
   const mLab = $('.m-now-meta small');
-  if (mLab) mLab.textContent = `HOZIR IJRODA · ${FXP.label}`;
+  if (mLab) mLab.textContent = `Hozir ijroda · ${FXP.label}`;
   const fx = S.fx.preset && S.fx.preset !== 'Oddiy' ? ` · ${S.fx.preset}` : '';
   $('#fpSource').textContent = `${S.source || 'Kutubxona'}${fx} · ${FXP.label}`;
 }
@@ -1422,7 +1438,7 @@ function nowCardHTML() {
   return `<div class="m-now" data-act="open-full">` +
     `<div class="m-now-bg" style="background-image:${$('#fpBg').style.backgroundImage || 'none'}"></div>` +
     `<div class="m-now-art"><div class="bass-glow"></div><div class="boom-ring"></div><img class="cur-art bass-art" src="${art}" alt=""></div>` +
-    `<div class="m-now-meta"><small>HOZIR IJRODA · ${esc(FXP.label)}</small><b class="cur-title">${esc(t.title)}</b>` +
+    `<div class="m-now-meta"><small>Hozir ijroda · ${esc(FXP.label)}</small><b class="cur-title">${esc(t.title)}</b>` +
     `<span class="cur-artist">${esc(t.artist || 'Noma\'lum ijrochi')}</span><canvas class="viz" id="mViz"></canvas></div></div>`;
 }
 function syncNowCard() {
@@ -1707,7 +1723,10 @@ function openMenu(id, x, y) {
 const normTxt = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\b(feat|ft)\.?\b.*$/, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function cleanTitle(t) {
-  return String(t || '')
+  t = String(t || '');
+  if (!/\s/.test(t) && (t.match(/_/g) || []).length >= 2) t = t.replace(/_+/g, ' ');   // "Song_Name_Artist" file names
+  return t
+    .replace(/\breverbed\b/gi, ' ')
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F\u200d]/gu, ' ')                       // emoji
     .replace(/\((?:[^)]*?)(slowed|sped up|speed up|nightcore|reverb|remix|edit|bass ?boost(ed)?|lyrics?|official|audio|video|visuali[sz]er|phonk|tiktok|version|prod\.?|текст[^)]*)[^)]*\)/gi, ' ')
     .replace(/\[[^\]]*\]|【[^】]*】/g, ' ')
@@ -2190,14 +2209,23 @@ function closeMenu() {
 }
 
 /* ---------- full player ---------- */
+// The full player is display:none while closed, so its GPU layers (cover, rays, glow, backdrop) are freed.
+let fullHideTimer = 0;
 function openFull() {
   if (!S.currentId) return;
-  $('#fullPlayer').classList.add('open');
+  const fp = $('#fullPlayer');
+  clearTimeout(fullHideTimer);
+  if (!fp.classList.contains('shown')) { fp.classList.add('shown'); void fp.offsetWidth; }   // reflow so the slide-in still plays
+  fp.classList.add('open');
   $('#fullPlayer').setAttribute('aria-hidden', 'false');
   startLoop();
 }
 function closeFull() {
-  $('#fullPlayer').classList.remove('open');
+  const fp = $('#fullPlayer');
+  if (!fp.classList.contains('open')) return;
+  fp.classList.remove('open');
+  clearTimeout(fullHideTimer);
+  fullHideTimer = setTimeout(() => { if (!fp.classList.contains('open')) fp.classList.remove('shown'); }, 700);
   $('#fullPlayer').setAttribute('aria-hidden', 'true');
 }
 
@@ -2382,6 +2410,12 @@ function bind() {
   });
   $('#editRemoveArt').addEventListener('click', () => { const t = S.tracks.get(editId); editArt = null; if (t) $('#editArt').src = placeholderArt(t); });
   $('#editCancel').addEventListener('click', closeEdit);
+  if (IS_DESKTOP) {
+    $('#collapseBtn').addEventListener('click', () => setCompact(!S.compact));
+    // rail mode shows icons only, so every item gets its name as a tooltip
+    $$('#sidebar .nav-item, #sidebar .side-btn').forEach(b => { if (!b.title) b.title = b.textContent.trim(); });
+    setCompact(S.compact, true);
+  }
   $('#lyMsg').addEventListener('click', e => { const b = e.target.closest('[data-ly]'); if (!b) return; b.dataset.ly === 'google' ? lyGoogle() : openLyEdit(); });
   $('.ly-credit').addEventListener('click', openLyEdit);
   $('#lyCancel').addEventListener('click', closeLyEdit);
@@ -2417,6 +2451,7 @@ function bind() {
     else if (e.key === 'ArrowDown') { e.preventDefault(); S.volume = Math.max(0, S.volume - 0.05); applyVolume(); persist(); }
     else if (e.key.toLowerCase() === 'm') { S.muted = !S.muted; applyVolume(); persist(); }
     else if (e.key.toLowerCase() === 'f' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#search').focus(); }
+    else if (e.key.toLowerCase() === 'b' && (e.ctrlKey || e.metaKey) && IS_DESKTOP) { e.preventDefault(); setCompact(!S.compact); }
     else if (e.key === 'Escape') { if (!$('#editModal').classList.contains('hidden')) closeEdit(); else { closeMenu(); closeFull(); } }
     else if (e.key.toLowerCase() === 'l' && S.currentId) { if (!$('#fullPlayer').classList.contains('open')) openFull(); toggleLyrics(); }
   });

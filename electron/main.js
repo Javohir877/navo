@@ -473,6 +473,49 @@ async function devScreenshots() {
     await shot('ly-edit');
     app.quit(); return;
   }
+  if (process.env.NAVO_MEM) {
+    // memory check: play a song for a while, then report each process's private memory
+    win.setSize(1440, 900);
+    await js(`document.querySelector('.row') && document.querySelector('.row').click()`);
+    const report = label => {
+      const m = app.getAppMetrics();
+      const mb = x => Math.round(x / 1024);
+      console.log('MEM', label, m.map(p => `${p.type}${p.name ? '(' + p.name + ')' : ''}:${mb(p.memory.privateBytes || p.memory.workingSetSize)}`).join(' '),
+        '| private total', mb(m.reduce((a, p) => a + (p.memory.privateBytes || 0), 0)) + 'MB');
+    };
+    await wait(15000); report('playing');
+    await js(`document.querySelector('[data-act=open-full]').click()`);
+    await wait(8000); report('full');
+    await js(`document.querySelector('[data-act=close-full]').click()`);
+    await wait(15000); report('later');
+    console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
+    app.quit(); return;
+  }
+  if (process.env.NAVO_LAYOUT) {
+    // layout review: normal and collapsed library at a few window sizes
+    win.setSize(+process.env.NAVO_W || 1440, +process.env.NAVO_H || 900);
+    if (process.env.NAVO_DIR) {   // fill the throwaway test library from a folder
+      const dir = process.env.NAVO_DIR;
+      win.webContents.send('open-paths', fs.readdirSync(dir).filter(f => /\.(m4a|mp3|flac)$/i.test(f)).map(f => path.join(dir, f)));
+      await wait(9000);
+    }
+    await js(`document.querySelector('.row') && document.querySelector('.row').click()`);
+    await wait(2500);
+    await shot('wide');
+    await js(`document.querySelector('#collapseBtn').click()`);
+    await wait(900);
+    await shot('collapsed');
+    await js(`document.querySelector('[data-view=top]').click()`);
+    await wait(700);
+    await shot('collapsed-top');
+    await js(`document.querySelector('#collapseBtn').click(); document.querySelector('[data-view=library]').click()`);
+    const mem = app.getAppMetrics().map(m => `${m.type}:${Math.round(m.memory.workingSetSize / 1024)}MB`).join(' ');
+    console.log('MEM', mem, 'total', Math.round(app.getAppMetrics().reduce((a, m) => a + m.memory.workingSetSize, 0) / 1024) + 'MB');
+    win.setSize(1100, 760);
+    await wait(900);
+    await shot('mid');
+    app.quit(); return;
+  }
   if (process.env.NAVO_SITE) {
     // Clean marketing screenshots for the download site
     win.setSize(1440, 900);
