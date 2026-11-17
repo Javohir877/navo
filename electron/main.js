@@ -557,6 +557,26 @@ async function devScreenshots() {
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
     app.quit(); return;
   }
+  if (process.env.NAVO_AUDIO) {
+    // effects chain: output peaks must stay below full scale; idle reverb gets unplugged
+    if (process.env.NAVO_DIR) {
+      const dir = process.env.NAVO_DIR;
+      win.webContents.send('open-paths', fs.readdirSync(dir).filter(f => /\.(m4a|mp3|flac)$/i.test(f)).slice(0, 4).map(f => path.join(dir, f)));
+      await wait(6000);
+    }
+    console.log('DBG', await js(`(async () => { document.querySelector('[data-view=library]').click(); await new Promise(r => setTimeout(r, 800));
+      const out = 'tracks=' + window.__navo.S.tracks.size; document.querySelector('.row').click(); return out; })()`));
+    await wait(2500);
+    for (const p of ['Oddiy', 'Slowed + Reverb', 'Concert Hall', '8D audio', 'Nightcore', 'Oddiy']) {
+      const r = await js(`(async () => { const n = window.__navo; n.setFxPreset(${JSON.stringify(p)});
+        await new Promise(r => setTimeout(r, 2200));
+        const d = n.audioDbg(), buf = new Float32Array(d.an.fftSize); let peak = 0, minRed = 0;
+        for (let k = 0; k < 40; k++) { d.an.getFloatTimeDomainData(buf); for (const v of buf) peak = Math.max(peak, Math.abs(v)); minRed = Math.min(minRed, n.audioDbg().red); await new Promise(r => setTimeout(r, 50)); }
+        return ${JSON.stringify(p)} + ': peak=' + peak.toFixed(3) + ' limiterDb=' + minRed.toFixed(1) + ' wetOn=' + n.audioDbg().wetOn + ' ctx=' + d.state + ' t=' + document.querySelector('.t-cur').textContent; })()`);
+      console.log('AUDIO', r);
+    }
+    app.quit(); return;
+  }
   if (process.env.NAVO_FX) {
     // sound-effects menu and settings section
     win.setSize(1440, 900);

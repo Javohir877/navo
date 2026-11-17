@@ -139,6 +139,10 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.0.7': [
+    "Effektlar (Concert Hall, Slowed + Reverb, 8D) naushnikda shitirlamaydi: ovoz endi chegaradan oshmaydi",
+    "Telefonda reverb yengillashdi: protsessorni kamroq yuklaydi, ovoz uzilmaydi",
+  ],
   '1.0.6': [
     "Telefonda bildirishnoma yangilandi: muqova, rangli fon, vaqt chizig'i, ❤ va yopish tugmalari",
     "Kompyuterda vazifalar panelidagi play / pause / next tugmalari har qanday ekranda aniq ko'rinadi",
@@ -164,7 +168,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.0.6';
+  return appVer || '1.0.7';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -250,6 +254,9 @@ function hideToast(delay = 1200) { clearTimeout(toastTimer); toastTimer = setTim
    ============================================================ */
 const audio = new Audio();
 audio.preload = 'auto';
+// Phones get shorter reverb tails: long convolutions starve the audio thread and crackle.
+const LITE_AUDIO = !IS_DESKTOP;
+let eqOut = null, wetOn = true, wetOffTimer = 0, limiter = null;
 let actx = null, srcNode = null, analyser = null, preamp = null, filters = [], freqData = null, bassAn = null, bassData = null;
 
 function ensureGraph() {
@@ -281,7 +288,7 @@ function ensureGraph() {
     fxDry = actx.createGain();
     fxWet = actx.createGain(); fxWet.gain.value = 0;
     convolver = actx.createConvolver();
-    convolver.buffer = roomIR = makeImpulse(actx, 3.2, 2.6); irMode = 'room';
+    convolver.buffer = roomIR = makeImpulse(actx, LITE_AUDIO ? 2.2 : 3.2, 2.6); irMode = 'room';
     preDelay = actx.createDelay(0.2); preDelay.delayTime.value = 0.01;
     wetTone = actx.createBiquadFilter(); wetTone.type = 'lowpass'; wetTone.frequency.value = 16000; wetTone.Q.value = 0.5;
     fxMix = actx.createGain();
@@ -290,10 +297,16 @@ function ensureGraph() {
     lfoDepth = actx.createGain(); lfoDepth.gain.value = 0;
     let node = srcNode.connect(preamp);
     filters.forEach(f => { node = node.connect(f); });
+    eqOut = node;
     node.connect(fxDry).connect(fxMix);
     node.connect(preDelay).connect(convolver).connect(wetTone).connect(fxWet).connect(fxMix);
     let out = fxMix;
     if (panner) { lfo.connect(lfoDepth).connect(panner.pan); lfo.start(); out = fxMix.connect(panner); }
+    // Brick-wall limiter: dry + reverb + EQ boosts can pass 0 dB, which crackles in headphones.
+    limiter = actx.createDynamicsCompressor();
+    limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20;
+    limiter.attack.value = 0.002; limiter.release.value = 0.2;
+    out = out.connect(limiter);
     out.connect(bassAn);
     bassAn.connect(analyser);
     analyser.connect(actx.destination);
@@ -336,7 +349,7 @@ function makeImpulse(ctx, seconds, decay) {
 /* Concert hall: 45 ms pre-delay, a cluster of early wall reflections, then a long
    (~4.5 s RT60) diffuse tail that gets darker as it decays, like air and seats absorbing highs. */
 function makeHallImpulse(ctx) {
-  const rate = ctx.sampleRate, seconds = 5.2, len = Math.floor(rate * seconds), rt60 = 4.4;
+  const rate = ctx.sampleRate, seconds = LITE_AUDIO ? 3.4 : 5.2, len = Math.floor(rate * seconds), rt60 = LITE_AUDIO ? 3.2 : 4.4;
   const buf = ctx.createBuffer(2, len, rate);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
@@ -375,6 +388,18 @@ function setReverbRoom(hall) {
   }, 160);
   return true;
 }
+/* No reverb -> unplug the convolver so it stops costing CPU; plug it back in when needed. */
+function setWetPath(on) {
+  if (!eqOut || !preDelay) return;
+  clearTimeout(wetOffTimer);
+  if (on) { if (!wetOn) { eqOut.connect(preDelay); wetOn = true; } return; }
+  if (!wetOn) return;
+  wetOffTimer = setTimeout(() => {           // let the tail fade first
+    if (S.fx.reverb > 0 || !wetOn) return;
+    try { eqOut.disconnect(preDelay); } catch { /* */ }
+    wetOn = false;
+  }, 1500);
+}
 function applyFx() {
   const f = S.fx;
   audio.preservesPitch = false;           // slowed / nightcore sound "real" with pitch following speed
@@ -384,7 +409,9 @@ function applyFx() {
     const t = actx.currentTime;
     if (!setReverbRoom(!!f.hall)) fxWet.gain.setTargetAtTime(f.reverb * (f.hall ? 0.75 : 0.85), t, 0.08);
     fxDry.gain.setTargetAtTime(1 - f.reverb * (f.hall ? 0.45 : 0.35), t, 0.08);
+    setWetPath(f.reverb > 0);
     if (lfoDepth) lfoDepth.gain.setTargetAtTime(f.d8 ? 0.9 : 0, t, 0.2);
+    fxMix.gain.setTargetAtTime(f.d8 ? 0.7 : 1, t, 0.2);   // panning to one side adds up to +3 dB
   }
   const name = f.preset || 'Maxsus';
   applyStyle();
@@ -2730,6 +2757,6 @@ async function boot() {
 }
 
 // hooks for the automated checks in electron/main.js (test runs only)
-if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S };
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, audioDbg: () => ({ wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
 boot().then(() => showNewsIfUpdated()).catch(() => {});
 })();
