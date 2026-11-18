@@ -139,6 +139,11 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.0.8': [
+    "Kuzatiladigan papkalar: Sozlamalarda papka ulang — unga tashlangan qo'shiqlar kutubxonaga o'zi qo'shiladi",
+    "Telefonda ilovadan chiqqanda yoki ekran o'chganda ovoz endi shitirlamaydi",
+    "Baland ovozda ham buzilish yo'q: chiqishda zaxira va yumshoq cheklagich qo'shildi",
+  ],
   '1.0.7': [
     "Effektlar (Concert Hall, Slowed + Reverb, 8D) naushnikda shitirlamaydi: ovoz endi chegaradan oshmaydi",
     "Telefonda reverb yengillashdi: protsessorni kamroq yuklaydi, ovoz uzilmaydi",
@@ -168,7 +173,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.0.7';
+  return appVer || '1.0.8';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -255,7 +260,16 @@ function hideToast(delay = 1200) { clearTimeout(toastTimer); toastTimer = setTim
 const audio = new Audio();
 audio.preload = 'auto';
 // Phones get shorter reverb tails: long convolutions starve the audio thread and crackle.
-const LITE_AUDIO = !IS_DESKTOP;
+const LITE_AUDIO = !IS_DESKTOP || !!(NAVO && NAVO.devTest && /lite/.test(location.hash));
+let master = null, outClip = null;
+function softClipCurve() {
+  const n = 4096, c = new Float32Array(n), k = 0.72, room = 0.97 - k;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1, a = Math.abs(x);
+    c[i] = a <= k ? x : Math.sign(x) * (k + room * Math.tanh((a - k) / room));
+  }
+  return c;
+}
 let eqOut = null, wetOn = true, wetOffTimer = 0, limiter = null;
 let actx = null, srcNode = null, analyser = null, preamp = null, filters = [], freqData = null, bassAn = null, bassData = null;
 
@@ -304,12 +318,17 @@ function ensureGraph() {
     if (panner) { lfo.connect(lfoDepth).connect(panner.pan); lfo.start(); out = fxMix.connect(panner); }
     // Brick-wall limiter: dry + reverb + EQ boosts can pass 0 dB, which crackles in headphones.
     limiter = actx.createDynamicsCompressor();
-    limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20;
+    limiter.threshold.value = -4; limiter.knee.value = 0; limiter.ratio.value = 20;
     limiter.attack.value = 0.002; limiter.release.value = 0.2;
     out = out.connect(limiter);
     out.connect(bassAn);
     bassAn.connect(analyser);
-    analyser.connect(actx.destination);
+    // Output stage after the meters (visuals keep their levels): a little headroom, then a
+    // soft clipper. Chrome's compressor adds make-up gain, so it alone is not a brick wall;
+    // the clipper rounds off anything left instead of hard digital clipping.
+    master = actx.createGain(); master.gain.value = LITE_AUDIO ? 0.8 : 0.94;
+    const clip = outClip = actx.createWaveShaper(); clip.curve = softClipCurve();
+    analyser.connect(master).connect(clip).connect(actx.destination);
     applyEq();
     applyFx();
   } catch (e) {
@@ -323,7 +342,7 @@ function applyEq() {
   const gains = S.eq.on ? S.eq.gains : EQ_FREQS.map(() => 0);
   filters.forEach((f, i) => f.gain.setTargetAtTime(gains[i], t, 0.04));
   const maxBoost = Math.max(0, ...gains);
-  preamp.gain.setTargetAtTime(Math.pow(10, (-maxBoost * 0.7) / 20), t, 0.04);
+  preamp.gain.setTargetAtTime(Math.pow(10, (-maxBoost * (LITE_AUDIO ? 1 : 0.7)) / 20), t, 0.04);
 }
 /* ---------- audio effects: Slowed + Reverb, Nightcore, 8D ---------- */
 let fxDry = null, fxWet = null, convolver = null, fxMix = null, panner = null, lfo = null, lfoDepth = null;
@@ -1723,14 +1742,14 @@ function probeDuration(url) {
 function blobToDataUrl(blob) {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
 }
-async function importFiles(fileList) {
+async function importFiles(fileList, quiet = false) {
   const files = Array.from(fileList).filter(f => AUDIO_SET.has(extOf(f.name)) || /^audio\//.test(f.type));
-  if (!files.length) { toast('Audio fayl topilmadi'); return; }
+  if (!files.length) { if (!quiet) toast('Audio fayl topilmadi'); return []; }
   let added = 0;
   const ids = [];
   for (let k = 0; k < files.length; k++) {
     const f = files[k];
-    toast(`Import qilinmoqda… ${k + 1}/${files.length}`, true);
+    if (!quiet) toast(`Import qilinmoqda… ${k + 1}/${files.length}`, true);
     const id = 'f_' + hashStr(`${f.name}|${f.size}|${f.lastModified}`);
     ids.push(id);
     if (S.tracks.has(id)) continue;
@@ -1748,11 +1767,139 @@ async function importFiles(fileList) {
       duration, ext: extOf(f.name), art, year: tags.year, trackNo,
     }, f);
     if (ok) added++;
-    if (k % 5 === 4) renderList();
+    if (!quiet && k % 5 === 4) renderList();
   }
+  ids.added = added;
+  if (quiet) return ids;
   hideToast(0);
   finishAdd(added, files.length);
   return ids;
+}
+
+/* ---------- watched folders: music dropped there joins the library by itself ----------
+   PC: the main process watches the folders live. Phone: the folder (picked once through
+   Android's folder picker) is re-read on start, on return to the app and every 30 s.
+   Every file is imported once; deleting a song from the library doesn't bring it back. */
+const NativeFolders = (!IS_DESKTOP && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.capacitorExports)
+  ? window.capacitorExports.registerPlugin('NavoFolders') : null;
+const W = { list: [], seen: new Set(), busy: false, again: false };
+try { W.list = JSON.parse(localStorage.getItem('navo.watch') || '[]'); } catch { W.list = []; }
+try { W.seen = new Set(JSON.parse(localStorage.getItem('navo.watchSeen') || '[]')); } catch { W.seen = new Set(); }
+const saveWatch = () => {
+  try { localStorage.setItem('navo.watch', JSON.stringify(W.list)); localStorage.setItem('navo.watchSeen', JSON.stringify([...W.seen])); } catch { /* */ }
+};
+function renderWatch() {
+  const box = $('#watchList');
+  if (!box) return;
+  box.innerHTML = W.list.map((w, i) => `<span class="watch-chip${w.bad ? ' bad' : ''}" title="${esc(w.bad ? 'Ruxsat yo\'qoldi — papkani qayta ulang' : (w.path || w.name))}">${icon('folder')}<span>${esc(w.name)}</span><button data-watch-del="${i}" aria-label="Uzish">✕</button></span>`).join('');
+}
+async function addWatchFolder() {
+  if (IS_DESKTOP) {
+    const dir = await NAVO.pickWatchFolder();
+    if (!dir) return;
+    if (W.list.some(w => w.path === dir)) { toast('Bu papka allaqachon ulangan'); return; }
+    W.list.push({ path: dir, name: dir.split(/[\\/]/).filter(Boolean).pop() || dir });
+  } else if (NativeFolders) {
+    let r;
+    try { r = await NativeFolders.pick(); } catch { r = null; }
+    if (!r || !r.uri) return;
+    const old = W.list.find(w => w.uri === r.uri);
+    if (old) { old.bad = false; } else W.list.push({ uri: r.uri, name: r.name || 'Papka' });
+  } else { toast('Bu qurilmada papka ulab bo\'lmaydi'); return; }
+  saveWatch(); renderWatch();
+  toast('Papka ulandi — undagi qo\'shiqlar qo\'shilmoqda…', true);
+  syncWatch(true);
+}
+function removeWatchFolder(i) {
+  const w = W.list[i];
+  if (!w) return;
+  W.list.splice(i, 1);
+  if (w.uri && NativeFolders) NativeFolders.release({ uri: w.uri }).catch(() => {});
+  saveWatch(); renderWatch();
+  if (IS_DESKTOP) NAVO.watchSet(W.list.map(x => x.path));
+  toast(`"${w.name}" uzildi. Qo'shiqlar kutubxonada qoladi`);
+}
+function watchDone(added, loud) {
+  hideToast(0);
+  if (added) { renderList(); renderNext(); toast(`Papkadan ${added} ta yangi qo'shiq qo'shildi ✨`); }
+  else if (loud) toast('Papkada yangi qo\'shiq yo\'q');
+}
+async function importWatchedPaths(paths, loud) {
+  const fresh = [...new Set(paths)].filter(p => !W.seen.has('p:' + p.toLowerCase()));
+  if (!fresh.length) { if (loud) watchDone(0, loud); return; }
+  const items = await NAVO.parsePaths(fresh);
+  let added = 0;
+  for (const it of items || []) if (await addTrack(it)) added++;
+  fresh.forEach(p => W.seen.add('p:' + p.toLowerCase()));
+  saveWatch();
+  watchDone(added, loud);
+}
+async function syncWatchAndroid(loud) {
+  let added = 0, anyFile = false;
+  for (const w of W.list) {
+    if (!w.uri) continue;
+    let files;
+    try { files = (await NativeFolders.scan({ uri: w.uri })).files || []; w.bad = false; }
+    catch (e) { if (/denied/.test(String(e && e.message))) w.bad = true; continue; }
+    const fresh = files.filter(f => !W.seen.has('u:' + f.uri + '|' + f.size));
+    for (let k = 0; k < fresh.length; k++) {
+      const f = fresh[k], key = 'u:' + f.uri + '|' + f.size;
+      anyFile = true;
+      if (fresh.length > 2) toast(`Papkadan qo'shilmoqda… ${k + 1}/${fresh.length}`, true);
+      // same id importFiles() would give it -> already in the library, nothing to copy
+      if (S.tracks.has('f_' + hashStr(`${f.name}|${f.size}|${f.modified}`))) { W.seen.add(key); continue; }
+      try {
+        const { path } = await NativeFolders.copy({ uri: f.uri });
+        const r = await fetch(window.Capacitor.convertFileSrc('file://' + path));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const blob = await r.blob();
+        const file = new File([blob], f.name, { type: f.mime || blob.type || 'audio/mpeg', lastModified: f.modified || 0 });
+        const ids = await importFiles([file], true);
+        added += (ids && ids.added) || 0;
+        W.seen.add(key);
+      } catch (e) { console.warn('watch import', f.name, e); }
+      if (k % 10 === 9) { saveWatch(); NativeFolders.clear().catch(() => {}); }
+    }
+  }
+  NativeFolders.clear().catch(() => {});
+  saveWatch(); renderWatch();
+  watchDone(added, loud || (anyFile && added));
+}
+async function syncWatch(loud = false) {
+  if (!W.list.length) return;
+  if (W.busy) { W.again = true; return; }
+  W.busy = true;
+  try {
+    if (IS_DESKTOP) {
+      const dirs = W.list.map(w => w.path);
+      const live = await NAVO.watchSet(dirs);
+      W.list.forEach(w => { w.bad = !live.includes(w.path); });
+      renderWatch();
+      await importWatchedPaths(await NAVO.watchScan(dirs), loud);
+    } else if (NativeFolders) await syncWatchAndroid(loud);
+  } catch (e) { console.warn('watch sync', e); }
+  W.busy = false;
+  if (W.again) { W.again = false; syncWatch(); }
+}
+function initWatch() {
+  renderWatch();
+  $('#watchAdd') && $('#watchAdd').addEventListener('click', addWatchFolder);
+  $('#watchList') && $('#watchList').addEventListener('click', e => {
+    const b = e.target.closest('[data-watch-del]');
+    if (b) removeWatchFolder(+b.dataset.watchDel);
+  });
+  if (IS_DESKTOP) {
+    if (NAVO.onWatchFiles) NAVO.onWatchFiles(paths => {
+      if (W.busy) { W.again = true; return; }
+      W.busy = true;
+      importWatchedPaths(paths, false).catch(() => {}).finally(() => { W.busy = false; if (W.again) { W.again = false; syncWatch(); } });
+    });
+  } else if (NativeFolders) {
+    const CapApp = window.capacitorApp && window.capacitorApp.App;
+    if (CapApp) CapApp.addListener('resume', () => syncWatch());
+    setInterval(() => { if (!document.hidden) syncWatch(); }, 30000);
+  }
+  setTimeout(() => syncWatch(), 2500);
 }
 
 /* Android: a music file opened from the file manager / "Open with" */
@@ -2733,6 +2880,7 @@ async function boot() {
   }
   updateProgress(true);
   renderNext();
+  initWatch();
   // find pictures for songs that were added without one
   setTimeout(() => S.order.forEach(queueCover), 1500);
   // intro: let the logo animation play briefly, then reveal the app
@@ -2757,6 +2905,6 @@ async function boot() {
 }
 
 // hooks for the automated checks in electron/main.js (test runs only)
-if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, audioDbg: () => ({ wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
 boot().then(() => showNewsIfUpdated()).catch(() => {});
 })();

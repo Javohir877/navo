@@ -277,6 +277,48 @@ ipcMain.handle('parse-paths', async (e, paths) => {
   const files = await expandPaths(paths.filter(p => typeof p === 'string'), e.sender);
   return parseMany(files, e.sender);
 });
+/* ---------- watched folders: new music dropped there is added automatically ---------- */
+const watchers = new Map();          // dir -> fs.FSWatcher
+const settling = new Map();          // file -> timer (waits until a copy has finished)
+let batch = [], batchTimer = 0;
+function flushBatch() {
+  const files = [...new Set(batch)]; batch = [];
+  if (files.length && win && !win.isDestroyed()) win.webContents.send('watch-files', files);
+}
+function settle(file, lastSize = -1, tries = 0) {
+  clearTimeout(settling.get(file));
+  settling.set(file, setTimeout(async () => {
+    let size = -1;
+    try { const st = await fsp.stat(file); if (!st.isFile()) { settling.delete(file); return; } size = st.size; }
+    catch { settling.delete(file); return; }                    // deleted or renamed away
+    if ((size !== lastSize || size === 0) && tries < 120) return settle(file, size, tries + 1);   // still copying
+    settling.delete(file);
+    batch.push(file);
+    clearTimeout(batchTimer); batchTimer = setTimeout(flushBatch, 700);
+  }, 1500));
+}
+function setWatched(dirs) {
+  const want = new Set((Array.isArray(dirs) ? dirs : []).filter(d => typeof d === 'string'));
+  for (const [d, w] of watchers) if (!want.has(d)) { try { w.close(); } catch { /* */ } watchers.delete(d); }
+  for (const d of want) {
+    if (watchers.has(d)) continue;
+    try {
+      const w = fs.watch(d, { recursive: true }, (_ev, name) => {
+        if (!name || !AUDIO_SET.has(extOf(String(name)))) return;
+        settle(path.join(d, String(name)));
+      });
+      w.on('error', () => { try { w.close(); } catch { /* */ } watchers.delete(d); });
+      watchers.set(d, w);
+    } catch { /* folder missing or not readable */ }
+  }
+  return [...watchers.keys()];
+}
+ipcMain.handle('watch-set', (_e, dirs) => setWatched(dirs));
+ipcMain.handle('watch-scan', (_e, dirs) => expandPaths((Array.isArray(dirs) ? dirs : []).filter(d => typeof d === 'string')));
+ipcMain.handle('pick-watch-folder', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Kuzatiladigan papkani tanlang', properties: ['openDirectory'] });
+  return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+});
 ipcMain.handle('gpu-info', () => {
   const st = app.getGPUFeatureStatus();
   return { accelerated: String(st.gpu_compositing || '').startsWith('enabled'), status: st };
@@ -557,7 +599,33 @@ async function devScreenshots() {
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
     app.quit(); return;
   }
+  if (process.env.NAVO_WATCH) {
+    // watched folder: existing files import on connect, new drops import live, deleted songs stay deleted
+    const src = process.env.NAVO_DIR, tmp = path.join(app.getPath('temp'), 'navo-watch-test');
+    fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(path.join(tmp, 'sub'), { recursive: true });
+    const music = fs.readdirSync(src).filter(f => /\.(m4a|mp3|flac)$/i.test(f));
+    fs.copyFileSync(path.join(src, music[0]), path.join(tmp, music[0]));
+    const count = () => js('window.__navo.S.tracks.size');
+    await js(`localStorage.removeItem('navo.watchSeen'); window.__navo.W.seen.clear(); window.__navo.W.list.length = 0`);
+    const before = await count();
+    await js(`(async () => { const n = window.__navo; n.W.list.push({ path: ${JSON.stringify(tmp)}, name: 'navo-watch-test' }); n.saveWatch(); n.renderWatch(); await n.syncWatch(true); })()`);
+    await wait(1500);
+    console.log('WATCH connect: before', before, 'after', await count());
+    fs.copyFileSync(path.join(src, music[1]), path.join(tmp, 'sub', music[1]));
+    await wait(7000);
+    console.log('WATCH live drop into sub-folder: now', await count(), '| toast:', await js(`document.querySelector('#toast').textContent`));
+    const last = await js(`(() => { const n = window.__navo; const t = [...n.S.tracks.values()].find(t => t.path && t.path.includes('navo-watch-test') && t.path.includes('sub')); return t && t.id; })()`);
+    console.log('WATCH new track id', last);
+    await js(`document.querySelector('[data-view=eq]').click()`);
+    await wait(600);
+    await js(`document.querySelector('.watch-card').scrollIntoView({ block: 'center' })`);
+    await wait(300); await shot('watch');
+    await js(`(() => { const n = window.__navo; n.W.list.length = 0; n.saveWatch(); n.renderWatch(); })()`);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    app.quit(); return;
+  }
   if (process.env.NAVO_AUDIO) {
+    if (process.env.NAVO_LITE) { await win.loadURL('navo://app/index.html#lite'); await wait(5000); }
     // effects chain: output peaks must stay below full scale; idle reverb gets unplugged
     if (process.env.NAVO_DIR) {
       const dir = process.env.NAVO_DIR;
@@ -567,14 +635,22 @@ async function devScreenshots() {
     console.log('DBG', await js(`(async () => { document.querySelector('[data-view=library]').click(); await new Promise(r => setTimeout(r, 800));
       const out = 'tracks=' + window.__navo.S.tracks.size; document.querySelector('.row').click(); return out; })()`));
     await wait(2500);
-    for (const p of ['Oddiy', 'Slowed + Reverb', 'Concert Hall', '8D audio', 'Nightcore', 'Oddiy']) {
-      const r = await js(`(async () => { const n = window.__navo; n.setFxPreset(${JSON.stringify(p)});
-        await new Promise(r => setTimeout(r, 2200));
-        const d = n.audioDbg(), buf = new Float32Array(d.an.fftSize); let peak = 0, minRed = 0;
-        for (let k = 0; k < 40; k++) { d.an.getFloatTimeDomainData(buf); for (const v of buf) peak = Math.max(peak, Math.abs(v)); minRed = Math.min(minRed, n.audioDbg().red); await new Promise(r => setTimeout(r, 50)); }
-        return ${JSON.stringify(p)} + ': peak=' + peak.toFixed(3) + ' limiterDb=' + minRed.toFixed(1) + ' wetOn=' + n.audioDbg().wetOn + ' ctx=' + d.state + ' t=' + document.querySelector('.t-cur').textContent; })()`);
-      console.log('AUDIO', r);
+    // measure the real output (after the soft clipper), with and without a big bass boost
+    await js(`(() => { const d = window.__navo.audioDbg(); const ctx = d.outClip.context; window.__outAn = ctx.createAnalyser(); window.__outAn.fftSize = 2048; d.outClip.connect(window.__outAn); })()`);
+    const eq = on => js(`(() => { const cb = document.querySelector('#eqOn'); if (cb.checked !== ${on}) cb.click();
+      const r = [...document.querySelectorAll('#eqBands input')]; r.forEach((x, i) => { x.value = ${on} && i < 3 ? x.max : 0; x.dispatchEvent(new Event('input', { bubbles: true })); }); })()`);
+    for (const boost of [false, true]) {
+      await eq(boost);
+      for (const p of ['Oddiy', 'Slowed + Reverb', 'Concert Hall', '8D audio', 'Nightcore']) {
+        const r = await js(`(async () => { const n = window.__navo; n.setFxPreset(${JSON.stringify(p)});
+          await new Promise(r => setTimeout(r, 2000));
+          const an = window.__outAn, buf = new Float32Array(an.fftSize); let peak = 0, hot = 0, tot = 0;
+          for (let k = 0; k < 50; k++) { an.getFloatTimeDomainData(buf); for (const v of buf) { const a = Math.abs(v); peak = Math.max(peak, a); tot++; if (a > 0.72) hot++; } await new Promise(r => setTimeout(r, 40)); }
+          return (n.audioDbg().lite ? 'phone ' : 'pc ') + ${JSON.stringify((boost ? 'bass+12 ' : '') + p)} + ': peak=' + peak.toFixed(3) + ' inSoftZone=' + (100 * hot / tot).toFixed(2) + '% wetOn=' + n.audioDbg().wetOn; })()`);
+        console.log('AUDIO', r);
+      }
     }
+    await eq(false);
     app.quit(); return;
   }
   if (process.env.NAVO_FX) {

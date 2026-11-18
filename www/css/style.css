@@ -987,3 +987,18 @@ kbd { display: inline-grid; place-items: center; min-width: 30px; height: 28px; 
 .fx-card .eq-head small, .fx-card .set-card small { font-weight: 600; }
 .fx-card .preset, #eqPresets .preset { font-weight: 700; }
 .fx-sl, .fx-sl output { font-weight: 700; }
+
+/* ---------- watched folders ---------- */
+.watch-card { align-items: flex-start; flex-wrap: wrap; }
+.watch-meta { flex: 1 1 220px; min-width: 0; }
+.watch-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.watch-list:empty { display: none; }
+.watch-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 34px; padding: 0 6px 0 12px; border-radius: 17px;
+  background: var(--glass-2); border: 1px solid var(--stroke); font-size: 13px; font-weight: 650; color: var(--text); }
+.watch-chip.bad { border-color: rgba(255, 125, 147, .55); color: #ff9fb0; }
+.watch-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-chip .i { width: 15px; height: 15px; flex: none; color: var(--accent); }
+.watch-chip button { width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; color: var(--text-2); flex: none; }
+.watch-chip button:hover { background: var(--glass-3); color: #fff; }
+.watch-chip button .i { color: inherit; width: 12px; height: 12px; }
+#watchAdd { align-self: center; }
