@@ -1,7 +1,7 @@
 {
   "name": "navo",
   "productName": "Navo",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Navo — chiroyli, blurli musiqa pleyeri (Windows + Android)",
   "main": "electron/main.js",
   "author": {

@@ -81,7 +81,7 @@
     <div class="side-label">Musiqa qo'shish</div>
     <div class="side-actions">
       <button class="side-btn" data-act="add-files"><span class="tile"><svg class="i"><use href="#i-plus"/></svg></span><span>Fayllar</span></button>
-      <button class="side-btn desktop-only" data-act="add-folder"><span class="tile alt"><svg class="i"><use href="#i-folder"/></svg></span><span>Papka</span></button>
+      <button class="side-btn" data-act="add-folder"><span class="tile alt"><svg class="i"><use href="#i-folder"/></svg></span><span>Papka</span></button>
     </div>
     <div class="side-now" data-act="open-full" title="To'liq ekranda ochish">
       <img class="cur-art" alt="">
@@ -100,11 +100,11 @@
       <div class="top-tools list-only">
         <label class="search">
           <svg class="i"><use href="#i-search"/></svg>
-          <input id="search" type="search" placeholder="Qo'shiq, ijrochi, albom…" autocomplete="off">
+          <input id="search" type="search" placeholder="Qidirish…" autocomplete="off">
         </label>
         <button class="round-btn" data-act="sort-menu" title="Saralash"><svg class="i"><use href="#i-sort"/></svg></button>
         <button class="round-btn" data-act="shuffle-all" title="Aralash ijro"><svg class="i"><use href="#i-shuffle"/></svg></button>
-        <button class="round-btn mobile-only" data-act="add-files" title="Qo'shish"><svg class="i"><use href="#i-plus"/></svg></button>
+        <button class="round-btn mobile-only" data-act="add-menu" title="Qo'shish"><svg class="i"><use href="#i-plus"/></svg></button>
         <button class="round-btn big-play" data-act="play-all" title="Hammasini ijro etish"><svg class="i"><use href="#i-play"/></svg></button>
       </div>
     </header>
@@ -121,7 +121,7 @@
         <p id="emptyText">Musiqa fayllarini qo'shing — barcha formatlar qo'llab-quvvatlanadi.</p>
         <div class="empty-actions" id="emptyActions">
           <button class="btn btn-primary" data-act="add-files"><svg class="i"><use href="#i-plus"/></svg>Fayl qo'shish</button>
-          <button class="btn btn-ghost desktop-only" data-act="add-folder"><svg class="i"><use href="#i-folder"/></svg>Papka qo'shish</button>
+          <button class="btn btn-ghost" data-act="add-folder"><svg class="i"><use href="#i-folder"/></svg><span class="desktop-only">Papka qo'shish</span><span class="mobile-only">Papka ulash</span></button>
         </div>
       </div>
     </section>
@@ -261,7 +261,7 @@
   <div class="fp-flash"></div>
   <div class="fp-top">
     <button class="icon-btn" data-act="close-full" title="Yopish"><svg class="i"><use href="#i-chev-down"/></svg></button>
-    <div class="fp-label"><small>HOZIR IJRO ETILMOQDA</small><span id="fpSource">Kutubxona</span></div>
+    <div class="fp-label"><small>Hozir ijro etilmoqda</small><span id="fpSource">Kutubxona</span></div>
     <span class="fp-top-space"></span>
   </div>
   <div class="fp-body">

@@ -139,6 +139,11 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.0.9': [
+    "Telefonda «+» tugmasi: fayllarni tanlash yoki papka ulash — yangi qo'shiqlar o'zi qo'shiladi",
+    "Orqaga tugmasi endi matn va yangiliklar oynalarini yopadi, ilovadan chiqib ketmaydi",
+    "Qidiruv maydoni va sarlavhalar telefonda toza ko'rinadi",
+  ],
   '1.0.8': [
     "Kuzatiladigan papkalar: Sozlamalarda papka ulang — unga tashlangan qo'shiqlar kutubxonaga o'zi qo'shiladi",
     "Telefonda ilovadan chiqqanda yoki ekran o'chganda ovoz endi shitirlamaydi",
@@ -173,7 +178,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.0.8';
+  return appVer || '1.0.9';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -1938,7 +1943,7 @@ async function addFiles() {
   }
 }
 async function addFolder() {
-  if (!IS_DESKTOP) return addFiles();
+  if (!IS_DESKTOP) return addWatchFolder();
   const items = await NAVO.pickFolder();
   hideToast(0);
   if (items) addDesktopItems(items);
@@ -2584,6 +2589,12 @@ function bind() {
       case 'mute': S.muted = !S.muted; applyVolume(); persist(); break;
       case 'add-files': addFiles(); break;
       case 'add-folder': addFolder(); break;
+      case 'add-menu': { const r = actEl.getBoundingClientRect();
+        showMenu('<div class="menu-title">Musiqa qo\'shish</div>' +
+          `<button data-m="files">${icon('plus')}Fayllarni tanlash</button>` +
+          `<button data-m="folder">${icon('folder')}Papka ulash — yangilari o'zi qo'shiladi</button>`,
+          Math.max(12, r.right - 270), r.bottom + 8, m => (m === 'folder' ? addWatchFolder() : addFiles()));
+        break; }
       case 'play-all': if (S.visible.length) { if (S.shuffle) toggleShuffle(); playList(S.visible, 0); } break;
       case 'shuffle-all': if (S.visible.length) { if (!S.shuffle) { S.shuffle = true; syncModes(); } playList(S.visible, Math.floor(Math.random() * S.visible.length)); } break;
       case 'fav-current': if (S.currentId) toggleFav(S.currentId); break;
@@ -2818,7 +2829,10 @@ function bind() {
   const CapApp = window.capacitorApp && window.capacitorApp.App;
   if (!IS_DESKTOP && CapApp) {
     CapApp.addListener('backButton', () => {
-      if (!$('#editModal').classList.contains('hidden')) closeEdit();
+      if (!$('#lyModal').classList.contains('hidden')) closeLyEdit();
+      else if (!$('#newsModal').classList.contains('hidden')) $('#newsModal').classList.add('hidden');
+      else if (!$('#updateCard').classList.contains('hidden')) $('#updateCard').classList.add('hidden');
+      else if (!$('#editModal').classList.contains('hidden')) closeEdit();
       else if (!$('#menu').classList.contains('hidden')) closeMenu();
       else if ($('#fullPlayer').classList.contains('open')) closeFull();
       else if (S.view !== 'library') setView('library');
