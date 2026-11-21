@@ -157,6 +157,64 @@ public class NavoFoldersPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Saves a PNG (base64) to Pictures/Navo in the gallery. */
+    @PluginMethod
+    public void saveImage(PluginCall call) {
+        String data = call.getString("data");
+        String name = safeName(call.getString("name", "Navo"));
+        if (data == null) { call.reject("no data"); return; }
+        try {
+            byte[] bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT);
+            android.content.ContentValues v = new android.content.ContentValues();
+            v.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name + ".png");
+            v.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+            if (android.os.Build.VERSION.SDK_INT >= 29) v.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Navo");
+            Uri uri = getContext().getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+            if (uri == null) throw new Exception("insert failed");
+            try (OutputStream os = getContext().getContentResolver().openOutputStream(uri)) {
+                if (os == null) throw new Exception("no stream");
+                os.write(bytes);
+            }
+            JSObject o = new JSObject();
+            o.put("uri", uri.toString());
+            call.resolve(o);
+        } catch (Exception e) {
+            call.reject("save failed");
+        }
+    }
+
+    /** Opens the system share sheet (Instagram, Telegram…) with the PNG. */
+    @PluginMethod
+    public void shareImage(PluginCall call) {
+        String data = call.getString("data");
+        String name = safeName(call.getString("name", "Navo"));
+        if (data == null) { call.reject("no data"); return; }
+        try {
+            File dir = new File(getContext().getCacheDir(), "share");
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            File f = new File(dir, "navo-card.png");
+            try (OutputStream os = new FileOutputStream(f)) { os.write(android.util.Base64.decode(data, android.util.Base64.DEFAULT)); }
+            Uri uri = androidx.core.content.FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", f);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("image/png");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.putExtra(Intent.EXTRA_TEXT, name);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(send, "Ulashish");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("share failed");
+        }
+    }
+
+    private static String safeName(String s) {
+        String n = s == null ? "Navo" : s.replaceAll("[\\\\/:*?\"<>|]+", " ").trim();
+        return n.isEmpty() ? "Navo" : (n.length() > 80 ? n.substring(0, 80) : n);
+    }
+
     @PluginMethod
     public void release(PluginCall call) {
         String s = call.getString("uri");

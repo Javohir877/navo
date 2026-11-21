@@ -319,6 +319,15 @@ ipcMain.handle('pick-watch-folder', async () => {
   const r = await dialog.showOpenDialog(win, { title: 'Kuzatiladigan papkani tanlang', properties: ['openDirectory'] });
   return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
 });
+ipcMain.handle('save-image', async (_e, dataUrl, name) => {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) return null;
+  const safe = String(name || 'Navo').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'Navo';
+  const r = await dialog.showSaveDialog(win, { title: 'Kartani saqlash', defaultPath: path.join(app.getPath('pictures'), safe + '.png'), filters: [{ name: 'PNG', extensions: ['png'] }] });
+  if (r.canceled || !r.filePath) return null;
+  await fsp.writeFile(r.filePath, Buffer.from(dataUrl.split(',')[1], 'base64'));
+  shell.showItemInFolder(r.filePath);
+  return r.filePath;
+});
 ipcMain.handle('gpu-info', () => {
   const st = app.getGPUFeatureStatus();
   return { accelerated: String(st.gpu_compositing || '').startsWith('enabled'), status: st };
@@ -597,6 +606,37 @@ async function devScreenshots() {
     await js(`document.querySelector('[data-act=close-full]').click()`);
     await wait(15000); report('later');
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
+    app.quit(); return;
+  }
+  if (process.env.NAVO_FEAT2) {
+    // artists / albums, queue drag, share card
+    win.setSize(1440, 900);
+    await js(`document.querySelector('#newsOk') && document.querySelector('#newsOk').click(); document.querySelector('[data-view=library]').click()`); await wait(500);
+    await js(`[...document.querySelectorAll('#trackList .row')].find(r => /MONTAGEM ALQ/.test(r.textContent)).click()`); await wait(2000);
+    await js(`document.querySelector('[data-act=lib-mode][data-mode=artists]').click()`); await wait(900); await shot('artists');
+    await js(`document.querySelector('[data-act=lib-mode][data-mode=albums]').click()`); await wait(900); await shot('albums');
+    await js(`document.querySelector('[data-act=lib-mode][data-mode=artists]').click()`); await wait(500);
+    await js(`document.querySelector('.grp-card').click()`); await wait(900); await shot('artist-page');
+    await js(`document.querySelector('[data-act=grp-back]').click(); document.querySelector('[data-act=lib-mode][data-mode=songs]').click()`); await wait(400);
+    // queue: drag the first row's grip down two rows
+    await js(`document.querySelector('[data-view=queue]').click()`); await wait(700);
+    const before = await js(`window.__navo.S.queue.slice(0, 4).map(id => window.__navo.S.tracks.get(id).title.slice(0, 12)).join(' | ')`);
+    await js(`(() => { const g = document.querySelector('#trackList .row .num'), r = g.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, h = g.closest('.row').getBoundingClientRect().height + 2;
+      const ev = (t, yy) => g.dispatchEvent(new PointerEvent(t, { bubbles: true, clientX: x, clientY: yy, pointerId: 1, button: 0, isPrimary: true }));
+      ev('pointerdown', y); ev('pointermove', y + h); ev('pointermove', y + 2 * h); })()`);
+    await wait(300); await shot('queue-drag');
+    await js(`(() => { const g = document.querySelector('#trackList .row.dragging .num'); g && g.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 })); })()`);
+    await wait(500);
+    console.log('FEAT2 queue before:', before);
+    console.log('FEAT2 queue after: ', await js(`window.__navo.S.queue.slice(0, 4).map(id => window.__navo.S.tracks.get(id).title.slice(0, 12)).join(' | ')`), '| playing index', await js('window.__navo.S.qIndex'));
+    await shot('queue-after');
+    // share card
+    await js(`document.querySelector('[data-view=library]').click()`); await wait(400);
+    await js(`document.querySelector('.hero-now [data-act=open-full]').click()`); await wait(1200);
+    await js(`document.querySelector('#fullPlayer [data-act=share-card]').click()`); await wait(2500);
+    await shot('share-modal');
+    const card = await js(`document.querySelector('#shareImg').src`);
+    if (typeof card === 'string' && card.startsWith('data:image/png')) fs.writeFileSync(`${process.env.NAVO_SHOT}-card.png`, Buffer.from(card.split(',')[1], 'base64'));
     app.quit(); return;
   }
   if (process.env.NAVO_MOTION) {

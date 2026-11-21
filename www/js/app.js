@@ -25,7 +25,8 @@ const AUDIO_EXT = ['mp3','flac','wav','ogg','oga','opus','m4a','mp4','aac','webm
 const AUDIO_SET = new Set(AUDIO_EXT);
 const LOSSLESS = new Set(['flac','wav','aiff','aif','aifc','ape','wv','alac','dsf','dff','tta']);
 const VIEW_TITLES = { library: 'Kutubxona', top: 'Top', favorites: 'Sevimlilar', queue: 'Navbat', eq: 'Sozlamalar', stats: 'Statistika' };
-const viewTitle = v => String(v).startsWith('pl:') ? ((PL.list.find(p => p.id === v.slice(3)) || {}).name || 'Pleylist') : (VIEW_TITLES[v] || 'Kutubxona');
+const grpName = v => { try { return decodeURIComponent(String(v).slice(3)); } catch { return String(v).slice(3); } };
+const viewTitle = v => String(v).startsWith('ar:') ? grpName(v) : String(v).startsWith('al:') ? grpName(v).split('\u0001')[0] || 'Albom' : String(v).startsWith('pl:') ? ((PL.list.find(p => p.id === v.slice(3)) || {}).name || 'Pleylist') : (VIEW_TITLES[v] || 'Kutubxona');
 
 /* ---------- helpers ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -97,6 +98,8 @@ const S = {
   fx: { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
   fxStyle: 'auto',
   fade: 0,
+  anim: true,
+  libMode: 'songs',
 };
 
 function loadSettings() {
@@ -113,6 +116,7 @@ function loadSettings() {
       fx: s.fx && typeof s.fx.speed === 'number' ? s.fx : { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
       fxStyle: s.fxStyle || 'auto',
       fade: typeof s.fade === 'number' ? s.fade : 0,
+      anim: s.anim !== false,
     });
     if (s.eq && Array.isArray(s.eq.gains) && s.eq.gains.length === EQ_FREQS.length) S.eq = s.eq;
   } catch { /* ignore */ }
@@ -142,6 +146,14 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.1.1': [
+    "Kutubxonada katta «Hozir ijroda» sahnasi: katta muqova, suzib yuruvchi ranglar va jonli to'lqinlar",
+    "Butun ilova foni endi tirik — muqova ranglari suzadi va bass bilan nafas oladi",
+    "Ijrochilar va albomlar: kutubxonada tugmalar orqali ko'ring va to'liq ijro eting",
+    "Navbatni sudrab tartiblang — qatordagi ≡ tutqichni ushlab suring",
+    "Ulashish kartasi: to'liq pleyerda «Ulashish» — story uchun chiroyli rasm",
+    "Animatsiyalar endi har doim yoqiq (Sozlamalarda o'chirish mumkin)",
+  ],
   '1.1.0': [
     "Yangi logotip: N harfi — bitta tovush to'lqini, bassdan (iliq) baland tovushlarga (sovuq) o'tadi",
     "Pleylistlar: o'z to'plamlaringizni yarating — qo'shiq menyusidan «Pleylistga qo'shish»",
@@ -190,7 +202,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.1.0';
+  return appVer || '1.1.1';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -254,7 +266,7 @@ function persist() {
       localStorage.setItem('navo.state', JSON.stringify({
         sort: S.sort, shuffle: S.shuffle, repeat: S.repeat, volume: S.volume, muted: S.muted,
         queue: S.queue, qIndex: S.qIndex, unshuffled: S.unshuffled, currentId: S.currentId,
-        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, compact: S.compact, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle, fade: S.fade,
+        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, compact: S.compact, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle, fade: S.fade, anim: S.anim,
       }));
     } catch { /* storage full or blocked */ }
   }, 300);
@@ -904,7 +916,7 @@ function markPlaying() {
 const vizState = new Map();
 const fpArtEl = $('#fpArt'), fpGlowEl = $('.fp-glow');
 let vizColors = ['#6d5cff', '#a597ff', '#ff4f9a'];
-const vizCanvases = () => [$('#npViz'), $('#fpViz'), document.getElementById('mViz')].filter(Boolean);
+const vizCanvases = () => [$('#npViz'), $('#fpViz'), document.getElementById('mViz'), document.getElementById('hnViz')].filter(Boolean);
 function clearViz() { for (const cv of vizCanvases()) { const g = cv.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); } }
 /* ============================================================
    Bass engine — runs every frame (60 fps), time-based smoothing.
@@ -1236,7 +1248,11 @@ function bassPulse(dt, ts) {
 function applyPulse(p, lv = 0) {
   if (Math.abs(p - lastPulseOut) < 0.002) return;
   lastPulseOut = p;
-  if (auroraEl && !S.liteOn) auroraEl.style.setProperty('--pulse', p.toFixed(3));
+  if (S.anim !== false) {
+    const pv = p.toFixed(3);
+    if (auroraEl) auroraEl.style.setProperty('--pulse', pv);
+    if (bdAurEl) bdAurEl.style.setProperty('--pulse', pv);
+  }
   if (PHONE_FX) { phonePulse(p); return; }
   const s = p > 0.002 ? `scale(${(1 + p * 0.055).toFixed(4)})` : '';
   Array.prototype.forEach.call(bassArts, el => { el.style.transform = s; });
@@ -1498,6 +1514,9 @@ function computeVisible() {
   }
   else if (S.view === 'favorites') ids = sortedIds(S.order.filter(id => S.tracks.get(id).fav));
   else if (S.view.startsWith('pl:')) { const p = plGet(S.view.slice(3)); ids = p ? p.ids.filter(id => S.tracks.has(id)) : []; }
+  else if (S.view.startsWith('ar:')) { const n = grpName(S.view); ids = sortedIds(S.order.filter(id => artistOf(S.tracks.get(id)) === n)); }
+  else if (S.view.startsWith('al:')) { const k = grpName(S.view); const T = id => S.tracks.get(id);
+    ids = S.order.filter(id => albumKey(T(id)) === k).sort((a, b) => ((T(a).trackNo || 999) - (T(b).trackNo || 999)) || String(T(a).title).localeCompare(String(T(b).title))); }
   else ids = sortedIds(S.order.slice());
   const q = S.query.trim().toLowerCase();
   if (q) ids = ids.filter(id => { const t = S.tracks.get(id); return `${t.title} ${t.artist} ${t.album}`.toLowerCase().includes(q); });
@@ -1547,6 +1566,20 @@ function renderList() {
   const list = $('#trackList'), empty = $('#empty');
   renderTopHero(ids);
   $('.list-head span:nth-child(5)').textContent = S.view === 'top' ? 'Tinglangan' : 'Format';
+  if (S.view.startsWith('ar:') || S.view.startsWith('al:')) {
+    empty.classList.add('hidden'); list.classList.remove('hidden'); $('.list-head').classList.add('hidden');
+    list.classList.toggle('queue-mode', false);
+    list.innerHTML = grpHeadHTML(ids) + ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('');
+    markPlaying();
+    return;
+  }
+  if (S.view === 'library' && S.libMode !== 'songs' && S.order.length) {
+    empty.classList.add('hidden'); list.classList.remove('hidden'); $('.list-head').classList.add('hidden');
+    list.innerHTML = nowCardHTML() + heroNowHTML() + libTabsHTML() + (S.libMode === 'artists' ? artistsGridHTML() : albumsGridHTML());
+    $('#viewCount').textContent = S.libMode === 'artists' ? `${groupArtists().length} ta ijrochi` : `${groupAlbums().length} ta albom`;
+    return;
+  }
+  list.classList.toggle('queue-mode', S.view === 'queue' && !S.query.trim());
   if (S.view.startsWith('pl:')) {           // playlist: header with actions, even when empty
     empty.classList.add('hidden');
     list.classList.remove('hidden');
@@ -1577,7 +1610,7 @@ function renderList() {
   list.classList.remove('hidden');
   $('.list-head').classList.add('hidden');      // the header now lives inside the list (sticky)
   const head = `<div class="list-head in"><span>#</span><span></span><span>Nomi</span><span>Albom</span><span>${S.view === 'top' ? 'Tinglangan' : 'Format'}</span><span class="r">Vaqt</span><span></span></div>`;
-  list.innerHTML = nowCardHTML() + carouselsHTML() + head + ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('');
+  list.innerHTML = nowCardHTML() + heroNowHTML() + (S.view === 'library' && !S.query.trim() ? libTabsHTML() : '') + carouselsHTML() + head + ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('');
   markPlaying();
 }
 /* ---------- library carousels: "Siz uchun" + "Yaqinda qo'shilgan" ---------- */
@@ -1702,8 +1735,30 @@ function nowCardHTML() {
     `<div class="m-now-meta"><small>Hozir ijroda · ${esc(FXP.label)}</small><b class="cur-title">${esc(t.title)}</b>` +
     `<span class="cur-artist">${esc(t.artist || 'Noma\'lum ijrochi')}</span><canvas class="viz" id="mViz"></canvas></div></div>`;
 }
+/* desktop library: a stage for the song that is playing — its own colours, cover, live bars */
+function heroNowHTML() {
+  const t = cur();
+  if (!t || isPhone() || S.view !== 'library' || S.query.trim()) return '';
+  const art = $('.p-art') && $('.p-art').getAttribute('src') ? $('.p-art').getAttribute('src') : thumbFor(t);
+  return `<section class="hero-now">` +
+    `<div class="hn-bg" style="background-image:${$('#fpBg').style.backgroundImage || 'none'}"></div>` +
+    `<div class="hn-aur"><i></i><i></i><i></i></div>` +
+    `<div class="hn-art" data-act="open-full"><div class="bass-glow"></div><div class="boom-ring"></div><img class="cur-art bass-art" src="${art}" alt=""></div>` +
+    `<div class="hn-meta"><small>Hozir ijroda</small><h2 class="cur-title">${esc(t.title)}</h2><span class="cur-artist">${esc(t.artist || 'Noma\'lum ijrochi')}</span>` +
+    `<div class="hn-row"><button class="play-btn" data-act="toggle">${icon(S.playing ? 'pause' : 'play')}</button>` +
+    `<button class="icon-btn fav-btn${t.fav ? ' on' : ''}" data-act="fav-current">${icon(t.fav ? 'heart-fill' : 'heart')}</button>` +
+    `<button class="icon-btn" data-act="open-full" title="To'liq ekranda ochish">${icon('expand')}</button></div></div>` +
+    `<canvas class="viz" id="hnViz"></canvas></section>`;
+}
 function syncNowCard() {
-  if (!isPhone() || !['library', 'top', 'favorites'].includes(S.view)) return;
+  if (!isPhone()) {                          // desktop: the big "now playing" stage on top of the library
+    if (S.view !== 'library' || S.query.trim()) return;
+    const hero = $('.hero-now');
+    if (!hero && cur()) { renderList(); return; }
+    if (hero) { const bg = $('.hn-bg', hero); if (bg) bg.style.backgroundImage = $('#fpBg').style.backgroundImage; }
+    return;
+  }
+  if (!['library', 'top', 'favorites'].includes(S.view)) return;
   const card = $('.m-now');
   if (!card && cur()) { renderList(); return; }
   if (card) { const bg = $('.m-now-bg', card); if (bg) bg.style.backgroundImage = $('#fpBg').style.backgroundImage; }
@@ -2163,6 +2218,147 @@ function plHeadHTML(ids) {
     `<button class="icon-btn" data-act="pl-shuffle" title="Aralash ijro"${ids.length ? '' : ' disabled'}>${icon('shuffle')}</button>` +
     `<button class="icon-btn" data-act="pl-rename" title="Nomini o'zgartirish">${icon('edit')}</button>` +
     `<button class="icon-btn" data-act="pl-delete" title="Pleylistni o'chirish">${icon('trash')}</button></div></div></div>`;
+}
+
+/* ---------- artists & albums ---------- */
+const artistOf = t => firstArtist(t && t.artist) || 'Noma\'lum ijrochi';
+const albumKey = t => (t && t.album) ? t.album + '\u0001' + (t.albumArtist || firstArtist(t.artist) || '') : '';
+function groupArtists() {
+  const m = new Map();
+  for (const id of S.order) { const t = S.tracks.get(id), a = artistOf(t); const g = m.get(a) || { name: a, ids: [], art: null }; g.ids.push(id); if (!g.art && t.artKey && S.thumbs.get(t.artKey)) g.art = t; m.set(a, g); }
+  return [...m.values()].sort((x, y) => (x.name === 'Noma\'lum ijrochi') - (y.name === 'Noma\'lum ijrochi') || y.ids.length - x.ids.length || x.name.localeCompare(y.name));
+}
+function groupAlbums() {
+  const m = new Map();
+  for (const id of S.order) { const t = S.tracks.get(id), k = albumKey(t); if (!k) continue; const g = m.get(k) || { key: k, name: t.album, artist: t.albumArtist || artistOf(t), year: t.year, ids: [], art: null }; g.ids.push(id); if (!g.art && t.artKey && S.thumbs.get(t.artKey)) g.art = t; m.set(k, g); }
+  return [...m.values()].sort((x, y) => y.ids.length - x.ids.length || String(x.name).localeCompare(String(y.name)));
+}
+function libTabsHTML() {
+  const b = (m, ic, l) => `<button class="lib-tab${S.libMode === m ? ' on' : ''}" data-act="lib-mode" data-mode="${m}">${icon(ic)}${l}</button>`;
+  return `<div class="lib-tabs">${b('songs', 'note', 'Qo\'shiqlar')}${b('artists', 'user', 'Ijrochilar')}${b('albums', 'disc', 'Albomlar')}</div>`;
+}
+const q8 = () => S.query.trim().toLowerCase();
+function artistsGridHTML() {
+  const gs = groupArtists().filter(g => !q8() || g.name.toLowerCase().includes(q8()));
+  return '<div class="grp-grid">' + gs.map((g, i) => { const t = g.art || S.tracks.get(g.ids[0]);
+    return `<div class="grp-card ar${i < 18 ? '" style="--d:' + i : ''}" data-view="ar:${esc(encodeURIComponent(g.name))}"><div class="grp-art" style="background-image:url('${thumbFor(t)}')"></div><b>${esc(g.name)}</b><span>${g.ids.length} ta qo'shiq</span></div>`; }).join('') + '</div>';
+}
+function albumsGridHTML() {
+  const gs = groupAlbums().filter(g => !q8() || `${g.name} ${g.artist}`.toLowerCase().includes(q8()));
+  if (!gs.length) return '<div class="pl-empty">' + icon('disc') + '<b>Albomlar topilmadi</b><span>Qo\'shiqlaringizda albom nomi yozilmagan. Uni qo\'shiq menyusidagi «Nomi va rasmini o\'zgartirish» orqali qo\'shishingiz mumkin.</span></div>';
+  return '<div class="grp-grid">' + gs.map((g, i) => { const t = g.art || S.tracks.get(g.ids[0]);
+    return `<div class="grp-card al${i < 18 ? '" style="--d:' + i : ''}" data-view="al:${esc(encodeURIComponent(g.key))}"><div class="grp-art" style="background-image:url('${thumbFor(t)}')"></div><b>${esc(g.name)}</b><span>${esc(g.artist)}${g.year ? ' · ' + g.year : ''}</span></div>`; }).join('') + '</div>';
+}
+function grpHeadHTML(ids) {
+  const isAr = S.view.startsWith('ar:'), t = ids.map(id => S.tracks.get(id)).find(x => x && x.artKey && S.thumbs.get(x.artKey)) || S.tracks.get(ids[0]);
+  const total = ids.reduce((s, id) => s + (S.tracks.get(id).duration || 0), 0);
+  const name = viewTitle(S.view), sub = isAr ? '' : esc(grpName(S.view).split('\u0001')[1] || '');
+  return `<div class="pl-head grp-head${isAr ? ' ar' : ''}"><div class="pl-cover"${t ? ` style="background-image:url('${thumbFor(t)}')"` : ''}></div>` +
+    `<div class="pl-info"><button class="grp-back" data-act="grp-back">${icon('back')}Kutubxona</button><small>${isAr ? 'Ijrochi' : 'Albom'}</small><h2>${esc(name)}</h2><span>${sub ? sub + ' · ' : ''}${ids.length} ta qo'shiq${total ? ' · ' + fmtTime(total) : ''}</span>` +
+    `<div class="pl-acts"><button class="btn btn-primary sm" data-act="pl-play">${icon('play')}Ijro</button>` +
+    `<button class="icon-btn" data-act="pl-shuffle" title="Aralash ijro">${icon('shuffle')}</button></div></div></div>`;
+}
+
+/* ---------- queue: drag the grip to reorder ---------- */
+function initQueueDrag() {
+  const list = $('#trackList');
+  list.addEventListener('pointerdown', e => {
+    const grip = e.target.closest('.queue-mode .row .num');
+    if (!grip || e.button > 0) return;
+    const row = grip.closest('.row'), rows = [...list.querySelectorAll('.row')];
+    const from = rows.indexOf(row);
+    if (from < 0) return;
+    e.preventDefault();
+    const h = row.getBoundingClientRect().height + 2, y0 = e.clientY, scroll0 = list.scrollTop;
+    let to = from;
+    row.classList.add('dragging'); list.classList.add('is-dragging');
+    try { grip.setPointerCapture(e.pointerId); } catch { /* */ }
+    const move = ev => {
+      const dy = ev.clientY - y0 + (list.scrollTop - scroll0);
+      row.style.transform = `translateY(${dy}px)`;
+      to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / h)));
+      rows.forEach((r, i) => { if (r === row) return; const shift = (i > from && i <= to) ? -h : (i < from && i >= to) ? h : 0; r.style.transform = shift ? `translateY(${shift}px)` : ''; });
+      const lr = list.getBoundingClientRect();     // keep scrolling near the edges
+      if (ev.clientY < lr.top + 50) list.scrollTop -= 8; else if (ev.clientY > lr.bottom - 50) list.scrollTop += 8;
+    };
+    const up = () => {
+      grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+      rows.forEach(r => { r.style.transform = ''; }); row.classList.remove('dragging'); list.classList.remove('is-dragging');
+      if (to === from) return;
+      const ids = S.queue.filter(id => S.tracks.has(id));
+      const [moved] = ids.splice(from, 1); ids.splice(to, 0, moved);
+      S.queue = ids; S.qIndex = Math.max(0, S.queue.indexOf(S.currentId));
+      renderList(); renderNext(); persist();
+      toast('Navbat tartibi o\'zgardi');
+    };
+    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+  });
+}
+
+/* ---------- share card: a story-sized picture of the song that is playing ---------- */
+function wrapLines(g, text, maxW, maxLines) {
+  const words = String(text).split(/\s+/), lines = []; let line = '';
+  for (const w of words) { const test = line ? line + ' ' + w : w; if (g.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) { lines.length = maxLines; let l = lines[maxLines - 1]; while (g.measureText(l + '…').width > maxW && l.length) l = l.slice(0, -1); lines[maxLines - 1] = l + '…'; }
+  return lines;
+}
+async function makeShareCard() {
+  const t = cur(); if (!t) return null;
+  const W = 1080, H = 1920, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  try { await document.fonts.load('800 80px Manrope'); await document.fonts.load('600 40px Manrope'); } catch { /* */ }
+  const cs = getComputedStyle(document.documentElement), C1 = cs.getPropertyValue('--c1').trim() || '#7a5cff', C2 = cs.getPropertyValue('--c2').trim() || '#ff4fa3', C3 = cs.getPropertyValue('--c3').trim() || '#19b4c9';
+  const artSrc = fpArtEl.getAttribute('src') || ($('.p-art') && $('.p-art').getAttribute('src'));
+  let art = null; try { art = await loadImage(artSrc); } catch { /* */ }
+  g.fillStyle = '#07060d'; g.fillRect(0, 0, W, H);
+  if (art) { g.save(); g.filter = 'blur(70px) saturate(1.5) brightness(.75)'; g.drawImage(art, -300, -200, W + 600, H + 400); g.restore(); }
+  const glow = (x, y, r, col, a) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, col); gr.addColorStop(1, 'transparent'); g.globalAlpha = a; g.fillStyle = gr; g.fillRect(0, 0, W, H); g.globalAlpha = 1; };
+  g.globalCompositeOperation = 'screen'; glow(160, 240, 820, C1, .85); glow(980, 1000, 760, C2, .7); glow(380, 1760, 720, C3, .65); g.globalCompositeOperation = 'source-over';
+  const shade = g.createLinearGradient(0, 0, 0, H); shade.addColorStop(0, 'rgba(0,0,0,.25)'); shade.addColorStop(.5, 'rgba(0,0,0,.05)'); shade.addColorStop(1, 'rgba(0,0,0,.7)'); g.fillStyle = shade; g.fillRect(0, 0, W, H);
+  // cover with a deep shadow
+  const S0 = 800, x0 = (W - S0) / 2, y0 = 300, rad = 56;
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+  g.save(); g.shadowColor = 'rgba(0,0,0,.65)'; g.shadowBlur = 90; g.shadowOffsetY = 40; rr(x0, y0, S0, S0, rad); g.fillStyle = '#111'; g.fill(); g.restore();
+  g.save(); rr(x0, y0, S0, S0, rad); g.clip(); if (art) { const r = Math.max(S0 / art.naturalWidth, S0 / art.naturalHeight); g.drawImage(art, x0 + (S0 - art.naturalWidth * r) / 2, y0 + (S0 - art.naturalHeight * r) / 2, art.naturalWidth * r, art.naturalHeight * r); } g.restore();
+  // title + artist
+  g.fillStyle = '#fff'; g.textAlign = 'left'; g.font = '800 82px Manrope';
+  const lines = wrapLines(g, t.title, W - 2 * x0, 2);
+  let y = y0 + S0 + 140;
+  for (const l of lines) { g.fillText(l, x0, y); y += 92; }
+  g.font = '600 44px Manrope'; g.fillStyle = 'rgba(255,255,255,.8)';
+  g.fillText(wrapLines(g, t.artist || 'Noma\'lum ijrochi', W - 2 * x0, 1)[0], x0, y + 6);
+  // a waveform in the song's colours (seeded by its title so it stays the same)
+  let seed = (parseInt(String(hashStr(t.title + (t.artist || ''))).replace(/[^0-9a-z]/gi, '').slice(0, 7), 36) % 2147483646) + 1; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const wy = y + 120, bars = 56, bw = (W - 2 * x0) / bars;
+  const wg = g.createLinearGradient(x0, 0, W - x0, 0); wg.addColorStop(0, C1); wg.addColorStop(.5, C2); wg.addColorStop(1, C3);
+  g.fillStyle = wg;
+  for (let i = 0; i < bars; i++) { const hgt = 12 + Math.pow(rnd(), 1.6) * 90 * (0.55 + 0.45 * Math.sin(i / bars * Math.PI)); rr(x0 + i * bw + 3, wy - hgt / 2, bw - 6, hgt, Math.min(6, (bw - 6) / 2)); g.fill(); }
+  // brand
+  try { const logo = await loadImage('img/logo.svg'); g.drawImage(logo, x0, H - 190, 84, 84); } catch { /* */ }
+  g.fillStyle = '#fff'; g.font = '800 44px Manrope'; g.fillText('Navo', x0 + 108, H - 140);
+  g.font = '600 32px Manrope'; g.fillStyle = 'rgba(255,255,255,.7)'; g.fillText('bilan tinglanmoqda', x0 + 108, H - 98);
+  return c.toDataURL('image/png');
+}
+const NativeShare = NativeFolders;   // the folders plugin also saves / shares pictures on Android
+async function openShareCard() {
+  toast('Karta tayyorlanmoqda…', true);
+  const url = await makeShareCard();
+  hideToast(0);
+  if (!url) return;
+  $('#shareImg').src = url;
+  $('#shareSend').classList.toggle('hidden', IS_DESKTOP);
+  $('#shareModal').classList.remove('hidden');
+}
+function closeShare() { $('#shareModal').classList.add('hidden'); }
+async function saveShare(send) {
+  const url = $('#shareImg').src, t = cur(), name = `Navo - ${t ? t.title : 'qo\'shiq'}`;
+  try {
+    if (IS_DESKTOP) { const p = await NAVO.saveImage(url, name); if (p) { toast('Karta saqlandi ✓'); closeShare(); } return; }
+    if (!NativeShare) { const a = document.createElement('a'); a.href = url; a.download = name + '.png'; a.click(); return; }
+    if (send) await NativeShare.shareImage({ data: url.split(',')[1], name });
+    else { await NativeShare.saveImage({ data: url.split(',')[1], name }); toast('Karta galereyaga saqlandi ✓'); closeShare(); }
+  } catch (e) { console.warn(e); toast('Kartani saqlab bo\'lmadi'); }
 }
 
 /* ---------- listening statistics ---------- */
@@ -2731,9 +2927,13 @@ let fullHideTimer = 0;
    Signature motion: cover flight, card deal, aurora, sparks
    ============================================================ */
 const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)');
-const motionOK = () => !REDUCED_MOTION.matches && !S.liteOn && !miniOn;
+const motionOK = () => S.anim !== false && !miniOn;
 const SPRING = 'cubic-bezier(.18, 1.25, .35, 1)', GLIDE = 'cubic-bezier(.65, 0, .25, 1)';
-const auroraEl = $('#fpAurora');
+const auroraEl = $('#fpAurora'), bdAurEl = $('#bdAur');
+function applyAnim() {
+  document.documentElement.classList.toggle('no-anim', S.anim === false);
+  const cb = $('#animOn'); if (cb) cb.checked = S.anim !== false;
+}
 let dealDir = 1;
 function coverSource() {
   for (const sel of ['.m-now .bass-art', '#player .p-art', '.side-now img']) {
@@ -2916,6 +3116,9 @@ function bind() {
           Math.max(12, r.right - 270), r.bottom + 8, m => (m === 'folder' ? addWatchFolder() : addFiles()));
         break; }
       case 'pl-new': plCreate(); break;
+      case 'lib-mode': S.libMode = actEl.dataset.mode; renderList(); $('#trackList').scrollTop = 0; break;
+      case 'grp-back': setView('library'); break;
+      case 'share-card': openShareCard(); break;
       case 'pl-play': if (S.visible.length) { if (S.shuffle) toggleShuffle(); playList(S.visible, 0); } break;
       case 'pl-shuffle': if (S.visible.length) { if (!S.shuffle) { S.shuffle = true; syncModes(); } playList(S.visible, Math.floor(Math.random() * S.visible.length)); } break;
       case 'pl-rename': plRename(S.view.slice(3)); break;
@@ -2987,6 +3190,13 @@ function bind() {
   $('#fxPresets').innerHTML = Object.keys(FX_PRESETS).map(n => `<button class="preset" data-fx="${n}">${n}</button>`).join('');
   $('#fxPresets').addEventListener('click', e => { const b = e.target.closest('[data-fx]'); if (b) setFxPreset(b.dataset.fx); });
   $('#fxSpeed').addEventListener('input', e => { S.fx.speed = +e.target.value; S.fx.preset = 'Maxsus'; applyFx(); persist(); });
+  initQueueDrag();
+  $('#shareClose').addEventListener('click', closeShare);
+  $('#shareSave').addEventListener('click', () => saveShare(false));
+  $('#shareSend').addEventListener('click', () => saveShare(true));
+  $('#shareModal').addEventListener('pointerdown', e => { if (e.target.id === 'shareModal') closeShare(); });
+  applyAnim();
+  $('#animOn').addEventListener('change', e => { S.anim = e.target.checked; applyAnim(); persist(); toast(S.anim ? 'Animatsiyalar yoqildi ✨' : 'Animatsiyalar o\'chirildi'); });
   const syncFade = () => { const r = $('#fadeSecs'); r.value = S.fade; setFill(r); $('#fadeOut').textContent = S.fade ? S.fade + ' s' : "O'chiq"; };
   syncFade();
   $('#fadeSecs').addEventListener('input', e => { S.fade = +e.target.value; syncFade(); if (!S.fade) fadeTo(1, 0.2); persist(); });
@@ -3162,7 +3372,8 @@ function bind() {
   const CapApp = window.capacitorApp && window.capacitorApp.App;
   if (!IS_DESKTOP && CapApp) {
     CapApp.addListener('backButton', () => {
-      if (!$('#plModal').classList.contains('hidden')) { if (plAsk.cancel) plAsk.cancel(); }
+      if (!$('#shareModal').classList.contains('hidden')) closeShare();
+      else if (!$('#plModal').classList.contains('hidden')) { if (plAsk.cancel) plAsk.cancel(); }
       else if (!$('#lyModal').classList.contains('hidden')) closeLyEdit();
       else if (!$('#newsModal').classList.contains('hidden')) $('#newsModal').classList.add('hidden');
       else if (!$('#updateCard').classList.contains('hidden')) $('#updateCard').classList.add('hidden');
@@ -3244,7 +3455,7 @@ async function boot() {
       setTimeout(() => sp.remove(), 800);
     };
     const ring = $('.sp-ring.r2', sp);
-    const running = ring && ring.getAnimations().length && !REDUCED_MOTION.matches;
+    const running = ring && ring.getAnimations().length && S.anim !== false;
     if (!running) leave();
     else { ring.addEventListener('animationend', () => setTimeout(leave, 220), { once: true }); setTimeout(leave, 2600); }
   }
