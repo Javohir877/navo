@@ -599,6 +599,74 @@ async function devScreenshots() {
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
     app.quit(); return;
   }
+  if (process.env.NAVO_MOTION) {
+    // cover flight, card deal, sparks: frames captured mid-animation
+    win.setSize(1440, 900);
+    const fast = async name => { console.log('MOTION', name, await js(`(() => ({ fly: document.querySelectorAll('.fly-cover').length, sparks: document.querySelectorAll('#sparkLayer > *').length, anims: document.getAnimations().filter(a => a.playState === 'running' && !(a.animationName)).length, motionOK: !matchMedia('(prefers-reduced-motion: reduce)').matches, lite: document.documentElement.classList.contains('lite'), fpOpacity: getComputedStyle(document.querySelector('#fullPlayer')).opacity }))()`).then(o => JSON.stringify(o))); fs.writeFileSync(`${process.env.NAVO_SHOT}-${name}.png`, (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG()); };
+    await js(`document.querySelector('#newsOk') && document.querySelector('#newsOk').click(); document.querySelector('[data-view=library]').click()`); await wait(500);
+    await js(`[...document.querySelectorAll('#trackList .row')].find(r => /MONTAGEM ALQ/.test(r.textContent)).click()`); await wait(2500);
+    await js(`document.querySelector('#player [data-act=open-full], #player .p-art').click()`);
+    await wait(170); await fast('open-mid');
+    await wait(1100); await fast('open-done');
+    await js(`document.querySelector('#fullPlayer [data-act=next]').click()`);
+    await wait(230); await fast('deal-mid');
+    await wait(1100); await fast('deal-done');
+    await js(`document.querySelector('#fullPlayer [data-act=fav-current]').click()`);
+    await wait(140); await fast('heart');
+    await js(`document.querySelector('#fullPlayer [data-act=fav-current]').click()`);
+    await wait(900);
+    await js(`document.querySelector('[data-act=close-full]').click()`);
+    await wait(200); await fast('close-mid');
+    app.quit(); return;
+  }
+  if (process.env.NAVO_FEAT) {
+    // playlists, smooth transitions, statistics
+    win.setSize(1440, 900);
+    if (process.env.NAVO_DIR) {
+      const dir = process.env.NAVO_DIR;
+      win.webContents.send('open-paths', fs.readdirSync(dir).filter(f => /\.(m4a|mp3|flac)$/i.test(f)).slice(0, 6).map(f => path.join(dir, f)));
+      await wait(7000);
+      await js(`window.__navo && document.querySelector('audio') ; document.querySelector('.play-btn') && 0`);
+    }
+    await js(`localStorage.removeItem('navo.playlists'); document.querySelector('#newsOk') && document.querySelector('#newsOk').click(); document.querySelector('[data-view=library]').click()`);
+    await wait(600);
+    await js(`document.querySelector('[data-act=pl-new]').click()`); await wait(400);
+    await js(`document.querySelector('#plName').value = 'Kechki chill'; document.querySelector('#plOk').click()`); await wait(800);
+    await shot('pl-empty');
+    await js(`document.querySelector('[data-view=library]').click()`); await wait(600);
+    for (const k of [0, 1, 2]) {
+      await js(`(() => { const rows = document.querySelectorAll('#trackList .row'); rows[${k}].querySelector('[data-a=more]').click(); })()`); await wait(300);
+      await js(`[...document.querySelectorAll('#menu [data-m]')].find(b => b.dataset.m === 'pl').click()`); await wait(300);
+      if (k === 0) await shot('pl-pick');
+      await js(`[...document.querySelectorAll('#menu [data-m]')].find(b => b.dataset.m !== '__new').click()`); await wait(400);
+    }
+    console.log('FEAT playlists:', await js(`localStorage.getItem('navo.playlists')`));
+    await js(`document.querySelector('.pl-item').click()`); await wait(800);
+    await shot('pl-full');
+    // fade: turn on 3 s, play the first playlist song, jump near its end
+    await js(`(() => { const r = document.querySelector('#fadeSecs'); r.value = 3; r.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await js(`document.querySelector('[data-act=pl-play]').click()`); await wait(250);
+    console.log('FEAT fade at start (should be low):', await js('window.__navo.audioDbg().fade'));
+    await wait(2500);
+    console.log('FEAT fade after 2.7 s (should be ~1):', await js('window.__navo.audioDbg().fade'));
+    await js(`(() => { const a = [...document.querySelectorAll('audio')][0] || null; return 0; })()`);
+    await js(`(async () => { const d = document.querySelector('.t-dur').textContent; })()`);
+    const near = await js(`(() => { const n = window.__navo; const t = n.S.tracks.get(n.S.currentId); return t.duration; })()`);
+    await js(`document.querySelector('.seek, #seek, .progress input') && 0`);
+    await js(`window.__navo.seekTest && 0`);
+    await js(`(() => { for (const el of document.querySelectorAll('input[type=range].seek, #seekBar, .p-center input[type=range]')) { el.value = el.max * (1 - 2.4 / ${near}); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); break; } })()`);
+    await wait(1300);
+    console.log('FEAT fade 1.1 s before end (should be falling):', await js('window.__navo.audioDbg().fade'), 'time', await js(`document.querySelector('.t-cur').textContent`), '/', near);
+    await wait(3000);
+    console.log('FEAT next song fade:', await js('window.__navo.audioDbg().fade'), 'now', await js(`document.querySelector('.cur-title').textContent`));
+    await js(`document.querySelector('[data-view=stats]').click()`); await wait(900);
+    await shot('stats');
+    await js(`document.querySelector('[data-view=eq]').click()`); await wait(600);
+    await js(`document.querySelector('.fade-card').scrollIntoView({ block: 'center' })`); await wait(300);
+    await shot('fade-setting');
+    await js(`(() => { const r = document.querySelector('#fadeSecs'); r.value = 0; r.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    app.quit(); return;
+  }
   if (process.env.NAVO_WATCH) {
     // watched folder: existing files import on connect, new drops import live, deleted songs stay deleted
     const src = process.env.NAVO_DIR, tmp = path.join(app.getPath('temp'), 'navo-watch-test');

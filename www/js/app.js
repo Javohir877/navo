@@ -24,7 +24,8 @@ const EQ_PRESETS = {
 const AUDIO_EXT = ['mp3','flac','wav','ogg','oga','opus','m4a','mp4','aac','webm','weba','wma','ape','wv','aiff','aif','aifc','amr','awb','3gp','mka','ac3','eac3','dts','m4b','caf','tta','mpc','au','snd','spx','mp2','mpga','dsf','dff','alac'];
 const AUDIO_SET = new Set(AUDIO_EXT);
 const LOSSLESS = new Set(['flac','wav','aiff','aif','aifc','ape','wv','alac','dsf','dff','tta']);
-const VIEW_TITLES = { library: 'Kutubxona', top: 'Top', favorites: 'Sevimlilar', queue: 'Navbat', eq: 'Sozlamalar' };
+const VIEW_TITLES = { library: 'Kutubxona', top: 'Top', favorites: 'Sevimlilar', queue: 'Navbat', eq: 'Sozlamalar', stats: 'Statistika' };
+const viewTitle = v => String(v).startsWith('pl:') ? ((PL.list.find(p => p.id === v.slice(3)) || {}).name || 'Pleylist') : (VIEW_TITLES[v] || 'Kutubxona');
 
 /* ---------- helpers ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -95,6 +96,7 @@ const S = {
   lite: null, viz: true, bass: true, netCovers: true, compact: false,
   fx: { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
   fxStyle: 'auto',
+  fade: 0,
 };
 
 function loadSettings() {
@@ -110,6 +112,7 @@ function loadSettings() {
       lite: typeof s.lite === 'boolean' ? s.lite : null, viz: s.viz !== false, bass: s.bass !== false, netCovers: s.netCovers !== false,
       fx: s.fx && typeof s.fx.speed === 'number' ? s.fx : { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
       fxStyle: s.fxStyle || 'auto',
+      fade: typeof s.fade === 'number' ? s.fade : 0,
     });
     if (s.eq && Array.isArray(s.eq.gains) && s.eq.gains.length === EQ_FREQS.length) S.eq = s.eq;
   } catch { /* ignore */ }
@@ -139,6 +142,15 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.1.0': [
+    "Yangi logotip: N harfi — bitta tovush to'lqini, bassdan (iliq) baland tovushlarga (sovuq) o'tadi",
+    "Pleylistlar: o'z to'plamlaringizni yarating — qo'shiq menyusidan «Pleylistga qo'shish»",
+    "To'liq pleyer jonlandi: muqova uchib ochiladi, fon muqova ranglarida bass bilan nafas oladi",
+    "Qo'shiq almashganda muqova karta kabi almashadi, ♥ bosilsa uchqunlar sochiladi",
+    "Silliq o'tish: qo'shiqlar orasida ovoz asta pasayib-ko'tariladi (Sozlamalarda)",
+    "Tinglash statistikasi: jami vaqt, eng sevimli ijrochilar va oxirgi 7 kun",
+    "Tugmalar endi yumaloq fonsiz — faqat ikonka",
+  ],
   '1.0.9': [
     "Telefonda «+» tugmasi: fayllarni tanlash yoki papka ulash — yangi qo'shiqlar o'zi qo'shiladi",
     "Orqaga tugmasi endi matn va yangiliklar oynalarini yopadi, ilovadan chiqib ketmaydi",
@@ -178,7 +190,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.0.9';
+  return appVer || '1.1.0';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -242,7 +254,7 @@ function persist() {
       localStorage.setItem('navo.state', JSON.stringify({
         sort: S.sort, shuffle: S.shuffle, repeat: S.repeat, volume: S.volume, muted: S.muted,
         queue: S.queue, qIndex: S.qIndex, unshuffled: S.unshuffled, currentId: S.currentId,
-        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, compact: S.compact, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle,
+        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, compact: S.compact, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle, fade: S.fade,
       }));
     } catch { /* storage full or blocked */ }
   }, 300);
@@ -266,7 +278,31 @@ const audio = new Audio();
 audio.preload = 'auto';
 // Phones get shorter reverb tails: long convolutions starve the audio thread and crackle.
 const LITE_AUDIO = !IS_DESKTOP || !!(NAVO && NAVO.devTest && /lite/.test(location.hash));
-let master = null, outClip = null;
+let master = null, outClip = null, fadeGain = null, fadingOut = false;
+/* Smooth transitions: the last S.fade seconds of a song fade out, the next one fades in. */
+function fadeTo(v, secs) {
+  if (fadeGain && actx) {
+    const t = actx.currentTime, g = fadeGain.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + Math.max(0.02, secs));
+  }
+}
+function fadeIn() {
+  fadingOut = false;
+  if (!S.fade || !fadeGain || !actx) { if (fadeGain && actx) fadeTo(1, 0.05); return; }
+  const t = actx.currentTime; fadeGain.gain.cancelScheduledValues(t); fadeGain.gain.setValueAtTime(0.0001, t);
+  fadeGain.gain.linearRampToValueAtTime(1, t + Math.min(3, Math.max(0.6, S.fade * 0.6)));
+}
+function fadeWatch() {
+  if (!S.fade || !fadeGain || audio.paused) return;
+  const d = audio.duration, left = d - audio.currentTime;
+  if (!isFinite(d) || d < S.fade * 3) return;
+  if (!fadingOut && left <= S.fade && left > 0.05) {
+    if (S.repeat === 'one' || (S.qIndex >= S.queue.length - 1 && S.repeat !== 'all')) return;   // nothing follows: let it end naturally
+    fadingOut = true; fadeTo(0.0001, left);
+  } else if (fadingOut && left > S.fade + 0.3) { fadingOut = false; fadeTo(1, 0.25); }      // seeked back
+}
+audio.addEventListener('timeupdate', fadeWatch);
+audio.addEventListener('seeked', fadeWatch);
 function softClipCurve() {
   const n = 4096, c = new Float32Array(n), k = 0.72, room = 0.97 - k;
   for (let i = 0; i < n; i++) {
@@ -314,7 +350,8 @@ function ensureGraph() {
     panner = actx.createStereoPanner ? actx.createStereoPanner() : null;
     lfo = actx.createOscillator(); lfo.frequency.value = 0.11;
     lfoDepth = actx.createGain(); lfoDepth.gain.value = 0;
-    let node = srcNode.connect(preamp);
+    fadeGain = actx.createGain();
+    let node = srcNode.connect(fadeGain).connect(preamp);
     filters.forEach(f => { node = node.connect(f); });
     eqOut = node;
     node.connect(fxDry).connect(fxMix);
@@ -499,6 +536,7 @@ async function loadIndex(i, autoplay = true, startAt = 0) {
   if (tok !== loadToken) return;
   if (!src) { toast('Fayl topilmadi'); return; }
   audio.src = src;
+  fadeIn();
   if (S.bass) prepareBeats(t);
   if (startAt > 0) audio.addEventListener('loadedmetadata', () => { try { audio.currentTime = startAt; } catch { /* */ } }, { once: true });
   if (autoplay) play();
@@ -523,7 +561,7 @@ function playList(ids, index, source) {
   if (!ids.length) return;
   S.queue = ids.slice();
   S.unshuffled = null;
-  S.source = source || VIEW_TITLES[S.view] || 'Kutubxona';
+  S.source = source || viewTitle(S.view);
   if (S.shuffle) {
     S.unshuffled = S.queue.slice();
     const first = S.queue.splice(index, 1)[0];
@@ -536,6 +574,7 @@ function playList(ids, index, source) {
 
 function next(auto = false) {
   if (!S.queue.length) return;
+  dealDir = 1;
   if (auto && sleepT.eot) {
     Object.assign(sleepT, { eot: false }); syncSleep();
     audio.currentTime = 0; audio.pause();
@@ -552,6 +591,7 @@ function next(auto = false) {
 }
 function prev() {
   if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+  dealDir = -1;
   let i = S.qIndex - 1;
   if (i < 0) i = S.repeat === 'all' ? S.queue.length - 1 : 0;
   loadIndex(i, true);
@@ -654,6 +694,12 @@ function setPalette(hues, sats = [0.8, 0.8, 0.8]) {
   const [r, g, b] = hslToRgb(hues[0], Math.min(1, Math.max(.7, sats[0])), .72);
   root.setProperty('--accent', `rgb(${r}, ${g}, ${b})`);
   root.setProperty('--accent-rgb', `${r}, ${g}, ${b}`);
+  const au = $('#fpAurora');
+  if (au) {
+    au.style.setProperty('--a1', hsl(hues[0], Math.max(.6, sats[0]), .5));
+    au.style.setProperty('--a2', hsl(hues[1], Math.max(.6, sats[1]), .48));
+    au.style.setProperty('--a3', hsl(hues[2], Math.max(.55, sats[2]), .45));
+  }
   vizColors = [hsl(hues[0], Math.max(.55, sats[0]), .55), `rgb(${r}, ${g}, ${b})`, hsl(hues[1], Math.max(.55, sats[1]), .55)];
   fxRGB = [hslToRgb(hues[0], Math.max(.6, sats[0]), .62).join(', '), `${r}, ${g}, ${b}`, hslToRgb(hues[1], Math.max(.6, sats[1]), .62).join(', ')];
 }
@@ -714,6 +760,7 @@ async function updateNowPlaying(t) {
   if (tok !== artToken) return;
   const hasArt = !!art;
   if (!art) art = placeholderArt(t);
+  dealCover(art);
   $$('.cur-art').forEach(img => { img.src = art; });
   // Backgrounds use a pre-blurred tiny copy of the cover: no live CSS blur -> much smoother.
   let img = null;
@@ -1189,6 +1236,7 @@ function bassPulse(dt, ts) {
 function applyPulse(p, lv = 0) {
   if (Math.abs(p - lastPulseOut) < 0.002) return;
   lastPulseOut = p;
+  if (auroraEl && !S.liteOn) auroraEl.style.setProperty('--pulse', p.toFixed(3));
   if (PHONE_FX) { phonePulse(p); return; }
   const s = p > 0.002 ? `scale(${(1 + p * 0.055).toFixed(4)})` : '';
   Array.prototype.forEach.call(bassArts, el => { el.style.transform = s; });
@@ -1449,6 +1497,7 @@ function computeVisible() {
       .slice(0, 100);
   }
   else if (S.view === 'favorites') ids = sortedIds(S.order.filter(id => S.tracks.get(id).fav));
+  else if (S.view.startsWith('pl:')) { const p = plGet(S.view.slice(3)); ids = p ? p.ids.filter(id => S.tracks.has(id)) : []; }
   else ids = sortedIds(S.order.slice());
   const q = S.query.trim().toLowerCase();
   if (q) ids = ids.filter(id => { const t = S.tracks.get(id); return `${t.title} ${t.artist} ${t.album}`.toLowerCase().includes(q); });
@@ -1478,12 +1527,14 @@ function rowHTML(t, i) {
     `<button class="icon-btn sm" data-a="more" title="Ko'proq">${icon('more')}</button></div></div>`;
 }
 function renderList() {
-  const isEq = S.view === 'eq';
-  $('#viewList').classList.toggle('hidden', isEq);
+  const isEq = S.view === 'eq', isStats = S.view === 'stats';
+  $('#viewList').classList.toggle('hidden', isEq || isStats);
   $('#viewEq').classList.toggle('hidden', !isEq);
-  $('.top-tools').classList.toggle('hidden', isEq);
-  $('#viewTitle').textContent = VIEW_TITLES[S.view];
-  if (isEq) { $('#viewCount').textContent = ''; return; }
+  $('#viewStats').classList.toggle('hidden', !isStats);
+  $('.top-tools').classList.toggle('hidden', isEq || isStats);
+  $('#viewTitle').textContent = viewTitle(S.view);
+  renderPlSide();
+  if (isEq || isStats) { $('#viewCount').textContent = ''; if (isStats) renderStats(); return; }
 
   const ids = computeVisible();
   S.visible = ids;
@@ -1496,6 +1547,15 @@ function renderList() {
   const list = $('#trackList'), empty = $('#empty');
   renderTopHero(ids);
   $('.list-head span:nth-child(5)').textContent = S.view === 'top' ? 'Tinglangan' : 'Format';
+  if (S.view.startsWith('pl:')) {           // playlist: header with actions, even when empty
+    empty.classList.add('hidden');
+    list.classList.remove('hidden');
+    $('.list-head').classList.add('hidden');
+    list.innerHTML = plHeadHTML(ids) + (ids.length ? ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('')
+      : `<div class="pl-empty">${icon('playlist')}<b>Pleylist hozircha bo'sh</b><span>Qo'shiq yonidagi ⋯ menyusidan «Pleylistga qo'shish»ni tanlang.</span></div>`);
+    markPlaying();
+    return;
+  }
   if (!ids.length) {
     list.innerHTML = '';
     list.classList.add('hidden');
@@ -1527,7 +1587,8 @@ function greeting() {
   return h < 5 ? 'Xayrli tun' : h < 12 ? 'Xayrli tong' : h < 18 ? 'Xayrli kun' : 'Xayrli kech';
 }
 function carouselsHTML() {
-  if (S.view !== 'library' || S.query.trim() || S.order.length < 4) return '';
+  if (S.view !== 'library' || S.query.trim()) return '';
+  if (S.order.length < 4) return plShelfHTML();
   const T = id => S.tracks.get(id);
   const recent = S.order.slice().sort((a, b) => (T(b).addedAt || 0) - (T(a).addedAt || 0)).slice(0, 14);
   const top = S.order.filter(id => (T(id).plays || 0) > 0)
@@ -1543,7 +1604,7 @@ function carouselsHTML() {
         `<div class="card-art" style="background-image:url('${thumbFor(t)}')"><span class="card-play">${icon('play')}</span></div>` +
         `<div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist || 'Noma\'lum ijrochi')}</div></div>`;
     }).join('') + `</div></section>`;
-  return `<div class="greet">${greeting()}</div>` +
+  return `<div class="greet">${greeting()}</div>` + plShelfHTML() +
     section('top', 'Siz uchun', 'Eng ko\'p tinglaganlaringiz', top) +
     section('recent', 'Yaqinda qo\'shilgan', 'Yangi qo\'shiqlaringiz', recent);
 }
@@ -1581,6 +1642,19 @@ async function renderTopHero(ids) {
 
 /* ---------- play statistics (for Top) ---------- */
 const listen = { id: null, pos: 0, secs: 0, counted: false, saved: 0 };
+const DAILY = { map: {}, dirty: 0 };
+try { DAILY.map = JSON.parse(localStorage.getItem('navo.daily') || '{}'); } catch { DAILY.map = {}; }
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function addDaily(secs) {
+  const k = dayKey();
+  DAILY.map[k] = (DAILY.map[k] || 0) + secs;
+  if ((DAILY.dirty += secs) > 20) {
+    DAILY.dirty = 0;
+    const keys = Object.keys(DAILY.map).sort();
+    if (keys.length > 400) keys.slice(0, keys.length - 400).forEach(x => delete DAILY.map[x]);
+    try { localStorage.setItem('navo.daily', JSON.stringify(DAILY.map)); } catch { /* */ }
+  }
+}
 function resetListen(id) { Object.assign(listen, { id, pos: 0, secs: 0, counted: false, saved: 0 }); }
 audio.addEventListener('timeupdate', () => {
   const t = cur();
@@ -1591,6 +1665,7 @@ audio.addEventListener('timeupdate', () => {
   if (audio.paused || d <= 0 || d > 2) return;   // ignore seeks / jumps
   listen.secs += d;
   t.listened = (t.listened || 0) + d;
+  addDaily(d);
   const need = Math.min(30, (audio.duration || t.duration || 60) * 0.5);
   let dirty = false;
   if (!listen.counted && listen.secs >= need) {
@@ -1960,6 +2035,7 @@ async function toggleFav(id) {
   if (id === S.currentId) syncFav();
   if (S.view === 'favorites') renderList();
   else $('#cntFav').textContent = S.order.filter(x => S.tracks.get(x).fav).length || '';
+  if (t.fav) heartBurst(id);
   toast(t.fav ? 'Sevimlilarga qo\'shildi ♥' : 'Sevimlilardan olib tashlandi');
 }
 function playNext(id) {
@@ -1996,6 +2072,127 @@ async function removeTrack(id) {
   toast(`"${t.title}" kutubxonadan o'chirildi`);
 }
 
+/* ---------- playlists (stored per device in localStorage) ---------- */
+const PL = { list: [] };
+try { PL.list = (JSON.parse(localStorage.getItem('navo.playlists') || '[]') || []).filter(p => p && p.id && Array.isArray(p.ids)); } catch { PL.list = []; }
+const plSave = () => { try { localStorage.setItem('navo.playlists', JSON.stringify(PL.list)); } catch { /* */ } };
+const plGet = id => PL.list.find(p => p.id === id);
+function plAsk({ title, text = '', value = '', ok = 'Saqlash', danger = false, input = true }) {
+  return new Promise(res => {
+    const m = $('#plModal'), inp = $('#plName'), okB = $('#plOk');
+    $('#plTitle').textContent = title;
+    $('#plText').textContent = text; $('#plText').classList.toggle('hidden', !text);
+    inp.classList.toggle('hidden', !input); inp.value = value;
+    okB.textContent = ok; okB.classList.toggle('danger', danger);
+    m.classList.remove('hidden');
+    if (input) setTimeout(() => { inp.focus(); inp.select(); }, 60);
+    const done = v => { m.classList.add('hidden'); okB.onclick = $('#plCancel').onclick = inp.onkeydown = m.onpointerdown = null; res(v); };
+    okB.onclick = () => done(input ? (inp.value.trim().slice(0, 60) || null) : true);
+    $('#plCancel').onclick = () => done(null);
+    inp.onkeydown = e => { if (e.key === 'Enter') okB.click(); else if (e.key === 'Escape') done(null); };
+    m.onpointerdown = e => { if (e.target === m) done(null); };
+    plAsk.cancel = () => done(null);
+  });
+}
+async function plCreate(ids = []) {
+  const name = await plAsk({ title: 'Yangi pleylist', value: `Pleylist ${PL.list.length + 1}` });
+  if (!name) return null;
+  const p = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, ids: [...new Set(ids)], created: Date.now() };
+  PL.list.push(p); plSave();
+  toast(ids.length ? `"${name}" yaratildi va qo'shiq qo'shildi` : `"${name}" pleylisti yaratildi`);
+  if (!ids.length) setView('pl:' + p.id); else renderList();
+  return p;
+}
+function plAdd(pid, ids) {
+  const p = plGet(pid); if (!p) return;
+  const before = p.ids.length;
+  ids.forEach(id => { if (!p.ids.includes(id)) p.ids.push(id); });
+  plSave();
+  toast(p.ids.length > before ? `"${p.name}" pleylistiga qo'shildi` : 'Bu qo\'shiq allaqachon pleylistda');
+  if (S.view === 'pl:' + pid || S.view === 'library') renderList(); else renderPlSide();
+}
+function plRemove(pid, id) {
+  const p = plGet(pid); if (!p) return;
+  p.ids = p.ids.filter(x => x !== id); plSave(); renderList();
+  toast('Pleylistdan olib tashlandi');
+}
+async function plRename(pid) {
+  const p = plGet(pid); if (!p) return;
+  const name = await plAsk({ title: 'Nomini o\'zgartirish', value: p.name });
+  if (!name) return;
+  p.name = name; plSave(); renderList();
+}
+async function plDelete(pid) {
+  const p = plGet(pid); if (!p) return;
+  const yes = await plAsk({ title: `"${p.name}" o'chirilsinmi?`, text: 'Faqat pleylist o\'chadi, qo\'shiqlar kutubxonada qoladi.', ok: 'O\'chirish', danger: true, input: false });
+  if (!yes) return;
+  PL.list = PL.list.filter(x => x.id !== pid); plSave();
+  setView('library');
+  toast('Pleylist o\'chirildi');
+}
+function plPickFor(ids, x, y) {
+  showMenu('<div class="menu-title">Pleylistga qo\'shish</div>' +
+    PL.list.map(p => `<button data-m="${esc(p.id)}">${icon('playlist')}${esc(p.name)}<em class="m-count">${p.ids.length}</em></button>`).join('') +
+    (PL.list.length ? '<hr>' : '') + `<button data-m="__new">${icon('plus')}Yangi pleylist</button>`,
+    x, y, m => (m === '__new' ? plCreate(ids) : plAdd(m, ids)));
+}
+function plCover(p) {
+  const t = p.ids.map(id => S.tracks.get(id)).find(Boolean);
+  return t ? thumbFor(t) : '';
+}
+function renderPlSide() {
+  const box = $('#plSide'); if (!box) return;
+  box.innerHTML = PL.list.map(p => `<button class="nav-item pl-item${S.view === 'pl:' + p.id ? ' active' : ''}" data-view="pl:${esc(p.id)}">${icon('playlist')}<span>${esc(p.name)}</span><em>${p.ids.filter(id => S.tracks.has(id)).length || ''}</em></button>`).join('')
+    || '<div class="pl-hint">Yoqqan qo\'shiqlaringizni to\'plang — «+» ni bosing</div>';
+}
+function plShelfHTML() {
+  if (!isPhone() && !PL.list.length) return '';
+  return '<section class="shelf pl-shelf"><div class="shelf-head"><div><h3>Pleylistlar</h3><small>O\'zingiz yig\'gan to\'plamlar</small></div></div><div class="shelf-row">' +
+    PL.list.map(p => { const c = plCover(p), n = p.ids.filter(id => S.tracks.has(id)).length;
+      return `<div class="card pl-card-item" data-view="pl:${esc(p.id)}"><div class="card-art pl-art"${c ? ` style="background-image:url('${c}')"` : ''}>${c ? '' : icon('playlist')}</div>` +
+        `<div class="t">${esc(p.name)}</div><div class="a">${n} ta qo'shiq</div></div>`; }).join('') +
+    `<div class="card pl-card-item pl-add" data-act="pl-new"><div class="card-art pl-art">${icon('plus')}</div><div class="t">Yangi pleylist</div><div class="a">Yaratish</div></div>` +
+    '</div></section>';
+}
+function plHeadHTML(ids) {
+  const p = plGet(S.view.slice(3)); if (!p) return '';
+  const c = plCover(p), total = ids.reduce((s, id) => s + (S.tracks.get(id).duration || 0), 0);
+  return `<div class="pl-head"><div class="pl-cover"${c ? ` style="background-image:url('${c}')"` : ''}>${c ? '' : icon('playlist')}</div>` +
+    `<div class="pl-info"><small>Pleylist</small><h2>${esc(p.name)}</h2><span>${ids.length} ta qo'shiq${total ? ' · ' + fmtTime(total) : ''}</span>` +
+    `<div class="pl-acts"><button class="btn btn-primary sm" data-act="pl-play"${ids.length ? '' : ' disabled'}>${icon('play')}Ijro</button>` +
+    `<button class="icon-btn" data-act="pl-shuffle" title="Aralash ijro"${ids.length ? '' : ' disabled'}>${icon('shuffle')}</button>` +
+    `<button class="icon-btn" data-act="pl-rename" title="Nomini o'zgartirish">${icon('edit')}</button>` +
+    `<button class="icon-btn" data-act="pl-delete" title="Pleylistni o'chirish">${icon('trash')}</button></div></div></div>`;
+}
+
+/* ---------- listening statistics ---------- */
+function fmtHours(sec) {
+  if (sec > 0 && sec < 60) return `${Math.max(1, Math.round(sec))} soniya`;
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h ? `${h} soat ${m} daq` : `${m} daqiqa`;
+}
+function renderStats() {
+  const box = $('#statsBox'); if (!box) return;
+  const T = [...S.tracks.values()];
+  const listened = T.reduce((s, t) => s + (t.listened || 0), 0), plays = T.reduce((s, t) => s + (t.plays || 0), 0);
+  const libDur = T.reduce((s, t) => s + (t.duration || 0), 0);
+  const byArtist = new Map();
+  T.forEach(t => { const a = firstArtist(t.artist) || 'Noma\'lum ijrochi'; const o = byArtist.get(a) || { secs: 0, plays: 0, t }; o.secs += t.listened || 0; o.plays += t.plays || 0; byArtist.set(a, o); });
+  const artists = [...byArtist.entries()].filter(([, o]) => o.secs > 0).sort((a, b) => b[1].secs - a[1].secs).slice(0, 5);
+  const tracks = T.filter(t => t.plays > 0).sort((a, b) => (b.plays - a.plays) || ((b.listened || 0) - (a.listened || 0))).slice(0, 5);
+  const days = [];
+  for (let k = 6; k >= 0; k--) { const d = new Date(); d.setDate(d.getDate() - k); days.push({ d, s: DAILY.map[dayKey(d)] || 0 }); }
+  const maxDay = Math.max(60, ...days.map(x => x.s));
+  const week = days.reduce((s, x) => s + x.s, 0);
+  const DN = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
+  const tile = (v, l) => `<div class="st-tile"><b>${v}</b><span>${l}</span></div>`;
+  box.innerHTML =
+    `<div class="st-tiles">${tile(fmtHours(listened), 'jami tinglagansiz')}${tile(plays, 'marta tinglangan')}${tile(fmtHours(week), 'shu hafta')}${tile(S.order.length, 'qo\'shiq · ' + fmtHours(libDur))}</div>` +
+    `<div class="st-card"><h3>Oxirgi 7 kun</h3><div class="st-bars">${days.map(x => `<div class="st-bar"><i style="height:${Math.max(3, Math.round(100 * x.s / maxDay))}%" title="${fmtHours(x.s)}"></i><span>${DN[x.d.getDay()]}</span></div>`).join('')}</div></div>` +
+    `<div class="st-grid"><div class="st-card"><h3>Eng ko'p tinglangan ijrochilar</h3>${artists.length ? artists.map(([a, o], i) => `<div class="st-row"><em>${i + 1}</em>${thumbDiv(o.t)}<div class="meta"><div class="t">${esc(a)}</div><div class="a">${fmtHours(o.secs)} · ${o.plays} marta</div></div></div>`).join('') : '<p class="st-none">Qo\'shiq tinglang — statistikangiz shu yerda yig\'iladi.</p>'}</div>` +
+    `<div class="st-card"><h3>Eng ko'p tinglangan qo'shiqlar</h3>${tracks.length ? tracks.map((t, i) => `<div class="st-row" data-play-id="${esc(t.id)}"><em>${i + 1}</em>${thumbDiv(t)}<div class="meta"><div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist || 'Noma\'lum ijrochi')} · ${t.plays} marta</div></div></div>`).join('') : '<p class="st-none">Hali hech bir qo\'shiq 30 soniyadan ko\'p tinglanmagan.</p>'}</div></div>`;
+}
+
 /* ---------- context menu ---------- */
 function openMenu(id, x, y) {
   const t = S.tracks.get(id);
@@ -2006,6 +2203,8 @@ function openMenu(id, x, y) {
     `<button data-m="play">${icon('play')}Ijro etish</button>` +
     `<button data-m="next">${icon('play-next')}Keyingi bo'lib ijro etish</button>` +
     `<button data-m="queue">${icon('queue')}Navbatga qo'shish</button>` +
+    `<button data-m="pl">${icon('playlist')}Pleylistga qo'shish</button>` +
+    (S.view.startsWith('pl:') ? `<button data-m="plrm">${icon('trash')}Pleylistdan olib tashlash</button>` : '') +
     `<button data-m="fav">${icon(t.fav ? 'heart-fill' : 'heart')}${t.fav ? 'Sevimlilardan olib tashlash' : 'Sevimlilarga qo\'shish'}</button>` +
     `<button data-m="edit">${icon('edit')}Nomi va rasmini o'zgartirish</button>` +
     (IS_DESKTOP ? `<button data-m="reveal">${icon('open')}Papkada ko'rsatish</button>` : '') +
@@ -2027,6 +2226,8 @@ function openMenu(id, x, y) {
     if (a === 'play') { const i = S.visible.indexOf(id); playList(S.visible, Math.max(0, i)); }
     else if (a === 'next') playNext(id);
     else if (a === 'queue') addToQueue(id);
+    else if (a === 'pl') plPickFor([id], x, y);
+    else if (a === 'plrm') plRemove(S.view.slice(3), id);
     else if (a === 'fav') toggleFav(id);
     else if (a === 'edit') openEdit(id);
     else if (a === 'reveal') NAVO.showInFolder(t.path);
@@ -2526,19 +2727,137 @@ function closeMenu() {
 /* ---------- full player ---------- */
 // The full player is display:none while closed, so its GPU layers (cover, rays, glow, backdrop) are freed.
 let fullHideTimer = 0;
+/* ============================================================
+   Signature motion: cover flight, card deal, aurora, sparks
+   ============================================================ */
+const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)');
+const motionOK = () => !REDUCED_MOTION.matches && !S.liteOn && !miniOn;
+const SPRING = 'cubic-bezier(.18, 1.25, .35, 1)', GLIDE = 'cubic-bezier(.65, 0, .25, 1)';
+const auroraEl = $('#fpAurora');
+let dealDir = 1;
+function coverSource() {
+  for (const sel of ['.m-now .bass-art', '#player .p-art', '.side-now img']) {
+    const el = $(sel);
+    if (!el || !el.offsetParent) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 8 && r.bottom > 0 && r.top < innerHeight) return el;
+  }
+  return null;
+}
+function flyCover(fromEl, toEl, kind) {
+  const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+  if (!a.width || !b.width || !toEl.offsetParent) return;
+  const src = (kind === 'open' ? toEl : fromEl).getAttribute('src') || fromEl.getAttribute('src');
+  if (!src) return;
+  const ghost = document.createElement('img');
+  ghost.className = 'fly-cover'; ghost.src = src;
+  Object.assign(ghost.style, { left: b.left + 'px', top: b.top + 'px', width: b.width + 'px', height: b.height + 'px' });
+  document.body.appendChild(ghost);
+  const s = a.width / b.width, dx = a.left - b.left, dy = a.top - b.top;
+  const rA = parseFloat(getComputedStyle(fromEl).borderRadius) || 12, rB = parseFloat(getComputedStyle(toEl).borderRadius) || 24;
+  const hide = kind === 'open' ? toEl : toEl;
+  hide.style.visibility = 'hidden';
+  const open = kind === 'open';
+  const anim = ghost.animate([
+    { transform: `translate(${dx}px, ${dy}px) scale(${s})`, borderRadius: `${rA / s}px`, boxShadow: '0 6px 16px -8px rgba(0,0,0,.6)' },
+    { transform: 'none', borderRadius: `${rB}px`, boxShadow: open ? '0 40px 90px -30px rgba(0,0,0,.85)' : '0 6px 16px -8px rgba(0,0,0,.6)' },
+  ], { duration: open ? 640 : 480, easing: open ? SPRING : GLIDE, fill: 'both' });
+  const done = () => { hide.style.visibility = ''; ghost.remove(); };
+  anim.onfinish = done; anim.oncancel = done;
+  setTimeout(done, 1200);
+}
+function dealCover(newSrc) {
+  if (!motionOK()) return;
+  const fp = $('#fullPlayer');
+  const old = fpArtEl.getAttribute('src');
+  if (fp.classList.contains('open') && !fp.classList.contains('ly-on') && old && old !== newSrc && fpArtEl.offsetParent) {
+    const r = fpArtEl.getBoundingClientRect();
+    const ghost = document.createElement('img');
+    ghost.className = 'fly-cover deal'; ghost.src = old;
+    Object.assign(ghost.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', borderRadius: getComputedStyle(fpArtEl).borderRadius });
+    document.body.appendChild(ghost);
+    const d = dealDir;
+    ghost.animate([
+      { transform: 'none', opacity: 1, filter: 'brightness(1)' },
+      { transform: `translateX(${-d * 58}%) translateY(6%) rotate(${-d * 14}deg) scale(.8)`, opacity: 0, filter: 'brightness(.6)' },
+    ], { duration: 560, easing: GLIDE, fill: 'both' }).onfinish = () => ghost.remove();
+    fpArtEl.animate([
+      { transform: `translateX(${d * 42}%) rotate(${d * 9}deg) scale(.86)`, opacity: 0 },
+      { transform: 'none', opacity: 1 },
+    ], { duration: 720, delay: 90, easing: SPRING, fill: 'backwards' });
+    const tt = $('#fullPlayer .fp-tt');
+    if (tt) tt.animate([{ transform: `translateX(${d * 26}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 520, delay: 140, easing: SPRING, fill: 'backwards' });
+  }
+  // small covers: a soft pop
+  for (const el of $$('#player .p-art, .side-now img, .m-now .bass-art')) {
+    if (el.offsetParent) el.animate([{ transform: 'scale(.82)', opacity: .2 }, { transform: 'none', opacity: 1 }], { duration: 480, easing: SPRING });
+  }
+  setTimeout(fitTitle, 60);
+}
+/* long titles in the full player glide back and forth instead of being cut */
+function fitTitle() {
+  const h = $('#fullPlayer .fp-tt .cur-title');
+  if (!h) return;
+  h.classList.remove('glide'); h.style.removeProperty('--shift');
+  requestAnimationFrame(() => {
+    const over = h.scrollWidth - h.clientWidth;
+    if (over > 6 && motionOK()) { h.style.setProperty('--shift', `-${over + 8}px`); h.style.setProperty('--glide-t', `${Math.max(6, over / 18)}s`); h.classList.add('glide'); }
+  });
+}
+function sparkAt(x, y, n = 14, hues) {
+  const layer = $('#sparkLayer');
+  if (!layer) return;
+  const cs = getComputedStyle(document.documentElement);
+  const cols = hues || [cs.getPropertyValue('--accent'), cs.getPropertyValue('--c1'), cs.getPropertyValue('--c2'), '#fff'];
+  for (let k = 0; k < n; k++) {
+    const p = document.createElement('i');
+    const ang = (k / n) * Math.PI * 2 + Math.random() * 0.5, dist = 34 + Math.random() * 46, size = 4 + Math.random() * 6;
+    Object.assign(p.style, { left: x + 'px', top: y + 'px', width: size + 'px', height: size + 'px', background: cols[k % cols.length] });
+    layer.appendChild(p);
+    p.animate([
+      { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${Math.cos(ang) * dist}px), calc(-50% + ${Math.sin(ang) * dist}px)) scale(0)`, opacity: 0 },
+    ], { duration: 620 + Math.random() * 300, easing: 'cubic-bezier(.1, .8, .3, 1)' }).onfinish = () => p.remove();
+  }
+}
+function heartBurst(id) {
+  if (!motionOK()) return;
+  const btns = [...$$('.fav-btn, .row[data-id="' + CSS.escape(id) + '"] .fav')].filter(b => b.offsetParent);
+  for (const b of btns) {
+    const r = b.getBoundingClientRect();
+    if (!r.width) continue;
+    sparkAt(r.left + r.width / 2, r.top + r.height / 2, 12, ['#ff5c8a', '#ff8fb1', '#ffd1e0', getComputedStyle(document.documentElement).getPropertyValue('--accent')]);
+    b.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.45)' }, { transform: 'scale(.92)' }, { transform: 'scale(1)' }], { duration: 520, easing: 'ease-out' });
+  }
+}
+function ripple(btn) {
+  const r = btn.getBoundingClientRect(), layer = $('#sparkLayer');
+  if (!layer || !r.width) return;
+  const o = document.createElement('b');
+  o.className = 'ripple';
+  Object.assign(o.style, { left: r.left + r.width / 2 + 'px', top: r.top + r.height / 2 + 'px', width: r.width + 'px', height: r.height + 'px' });
+  layer.appendChild(o);
+  o.animate([{ transform: 'translate(-50%, -50%) scale(1)', opacity: .55 }, { transform: 'translate(-50%, -50%) scale(2.1)', opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.2, .7, .3, 1)' }).onfinish = () => o.remove();
+}
+window.addEventListener('resize', () => { if ($('#fullPlayer').classList.contains('open')) fitTitle(); });
+
 function openFull() {
   if (!S.currentId) return;
   if (miniOn) { setMini(false); return; }
   const fp = $('#fullPlayer');
   clearTimeout(fullHideTimer);
   if (!fp.classList.contains('shown')) { fp.classList.add('shown'); void fp.offsetWidth; }   // reflow so the slide-in still plays
+  const from = motionOK() ? coverSource() : null;
   fp.classList.add('open');
+  if (from) flyCover(from, fpArtEl, 'open');
+  fitTitle();
   $('#fullPlayer').setAttribute('aria-hidden', 'false');
   startLoop();
 }
 function closeFull() {
   const fp = $('#fullPlayer');
   if (!fp.classList.contains('open')) return;
+  if (motionOK() && !fp.classList.contains('ly-on')) { const to = coverSource(); if (to) flyCover(fpArtEl, to, 'close'); }
   fp.classList.remove('open');
   clearTimeout(fullHideTimer);
   fullHideTimer = setTimeout(() => { if (!fp.classList.contains('open')) fp.classList.remove('shown'); }, 700);
@@ -2578,6 +2897,7 @@ function bind() {
     const actEl = e.target.closest('[data-act]');
     if (!actEl) return;
     const act = actEl.dataset.act;
+    if (act === 'toggle' && motionOK()) ripple(actEl);
     switch (act) {
       case 'toggle': toggle(); break;
       case 'mini': setMini(!miniOn); break;
@@ -2595,6 +2915,11 @@ function bind() {
           `<button data-m="folder">${icon('folder')}Papka ulash — yangilari o'zi qo'shiladi</button>`,
           Math.max(12, r.right - 270), r.bottom + 8, m => (m === 'folder' ? addWatchFolder() : addFiles()));
         break; }
+      case 'pl-new': plCreate(); break;
+      case 'pl-play': if (S.visible.length) { if (S.shuffle) toggleShuffle(); playList(S.visible, 0); } break;
+      case 'pl-shuffle': if (S.visible.length) { if (!S.shuffle) { S.shuffle = true; syncModes(); } playList(S.visible, Math.floor(Math.random() * S.visible.length)); } break;
+      case 'pl-rename': plRename(S.view.slice(3)); break;
+      case 'pl-delete': plDelete(S.view.slice(3)); break;
       case 'play-all': if (S.visible.length) { if (S.shuffle) toggleShuffle(); playList(S.visible, 0); } break;
       case 'shuffle-all': if (S.visible.length) { if (!S.shuffle) { S.shuffle = true; syncModes(); } playList(S.visible, Math.floor(Math.random() * S.visible.length)); } break;
       case 'fav-current': if (S.currentId) toggleFav(S.currentId); break;
@@ -2620,7 +2945,7 @@ function bind() {
       if (r) r.scrollBy({ left: r.clientWidth * 0.8 * +nav.dataset.dir, behavior: 'smooth' });
       return;
     }
-    const card = e.target.closest('.card');
+    const card = e.target.closest('.card[data-sec]');
     if (card) {
       const ids = carouselSets[card.dataset.sec] || [];
       const id = card.dataset.cid;
@@ -2662,6 +2987,14 @@ function bind() {
   $('#fxPresets').innerHTML = Object.keys(FX_PRESETS).map(n => `<button class="preset" data-fx="${n}">${n}</button>`).join('');
   $('#fxPresets').addEventListener('click', e => { const b = e.target.closest('[data-fx]'); if (b) setFxPreset(b.dataset.fx); });
   $('#fxSpeed').addEventListener('input', e => { S.fx.speed = +e.target.value; S.fx.preset = 'Maxsus'; applyFx(); persist(); });
+  const syncFade = () => { const r = $('#fadeSecs'); r.value = S.fade; setFill(r); $('#fadeOut').textContent = S.fade ? S.fade + ' s' : "O'chiq"; };
+  syncFade();
+  $('#fadeSecs').addEventListener('input', e => { S.fade = +e.target.value; syncFade(); if (!S.fade) fadeTo(1, 0.2); persist(); });
+  $('#statsBox').addEventListener('click', e => {
+    const r = e.target.closest('[data-play-id]'); if (!r) return;
+    const ids = [...$('#statsBox').querySelectorAll('[data-play-id]')].map(x => x.dataset.playId);
+    playList(ids, Math.max(0, ids.indexOf(r.dataset.playId)), 'Statistika');
+  });
   $('#fxReverb').addEventListener('input', e => { S.fx.reverb = e.target.value / 100; S.fx.preset = 'Maxsus'; applyFx(); persist(); });
   $('#fx8d').addEventListener('change', e => { S.fx.d8 = e.target.checked; S.fx.preset = 'Maxsus'; ensureGraph(); applyFx(); persist(); });
   $('#fxReset').addEventListener('click', () => setFxPreset('Oddiy'));
@@ -2829,7 +3162,8 @@ function bind() {
   const CapApp = window.capacitorApp && window.capacitorApp.App;
   if (!IS_DESKTOP && CapApp) {
     CapApp.addListener('backButton', () => {
-      if (!$('#lyModal').classList.contains('hidden')) closeLyEdit();
+      if (!$('#plModal').classList.contains('hidden')) { if (plAsk.cancel) plAsk.cancel(); }
+      else if (!$('#lyModal').classList.contains('hidden')) closeLyEdit();
       else if (!$('#newsModal').classList.contains('hidden')) $('#newsModal').classList.add('hidden');
       else if (!$('#updateCard').classList.contains('hidden')) $('#updateCard').classList.add('hidden');
       else if (!$('#editModal').classList.contains('hidden')) closeEdit();
@@ -2900,7 +3234,20 @@ async function boot() {
   // intro: let the logo animation play briefly, then reveal the app
   moveTabPill();
   const sp = $('#splash');
-  if (sp) setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 700); }, Math.max(0, 650 - performance.now()));
+  if (sp) {
+    // leave once the logo has drawn itself and its rings have sounded (or at once with reduced motion)
+    let gone = false;
+    const leave = () => {
+      if (gone) return; gone = true;
+      sp.classList.add('out');
+      if (motionOK()) { document.documentElement.classList.add('enter'); setTimeout(() => document.documentElement.classList.remove('enter'), 1600); }
+      setTimeout(() => sp.remove(), 800);
+    };
+    const ring = $('.sp-ring.r2', sp);
+    const running = ring && ring.getAnimations().length && !REDUCED_MOTION.matches;
+    if (!running) leave();
+    else { ring.addEventListener('animationend', () => setTimeout(leave, 220), { once: true }); setTimeout(leave, 2600); }
+  }
 
   const CapApp = window.capacitorApp && window.capacitorApp.App;
   if (!IS_DESKTOP && CapApp && CapApp.getLaunchUrl) {
@@ -2919,6 +3266,6 @@ async function boot() {
 }
 
 // hooks for the automated checks in electron/main.js (test runs only)
-if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ fade: fadeGain ? fadeGain.gain.value : null, outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
 boot().then(() => showNewsIfUpdated()).catch(() => {});
 })();
