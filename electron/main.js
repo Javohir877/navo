@@ -608,6 +608,26 @@ async function devScreenshots() {
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
     app.quit(); return;
   }
+  if (process.env.NAVO_HOME) {
+    // home page, library sidebar, mixes, about-the-artist
+    win.setSize(+process.env.NAVO_W || 1440, +process.env.NAVO_H || 900);
+    if (process.env.NAVO_DIR) {
+      const dir = process.env.NAVO_DIR;
+      win.webContents.send('open-paths', fs.readdirSync(dir).filter(f => /[.](m4a|mp3|flac)$/i.test(f)).map(f => path.join(dir, f)));
+      await wait(9000);
+      await js(`window.__navo && window.__navo.S && 0`);
+    }
+    await js(`document.querySelector('#newsOk') && document.querySelector('#newsOk').click()`); await wait(400);
+    await shot('home-idle');
+    await js(`document.querySelector('.qt [data-act=play-group]') && document.querySelector('.qt:nth-child(2) [data-act=play-group]').click()`); await wait(2500);
+    await js(`document.querySelector('[data-view=home]').click()`); await wait(900);
+    await shot('home-playing');
+    await js(`document.querySelector('#trackList').scrollTop = 520`); await wait(500); await shot('home-scrolled');
+    await js(`document.querySelector('[data-act=side-filter][data-f=ar]').click()`); await wait(400);
+    await js(`document.querySelector('.mix-card') && document.querySelector('.mix-card').click()`); await wait(900); await shot('mix-page');
+    console.log('HOME errors check', await js(`document.querySelectorAll('.qt').length + ' tiles, ' + document.querySelectorAll('.mix-card').length + ' mixes'`));
+    app.quit(); return;
+  }
   if (process.env.NAVO_FEAT2) {
     // artists / albums, queue drag, share card
     win.setSize(1440, 900);
