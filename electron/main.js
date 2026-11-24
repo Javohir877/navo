@@ -608,6 +608,18 @@ async function devScreenshots() {
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
     app.quit(); return;
   }
+  if (process.env.NAVO_POLISH) {
+    // cover tilt under the mouse, toast with an icon, smaller plus buttons
+    win.setSize(1440, 900);
+    await js(`document.querySelector('#newsOk') && document.querySelector('#newsOk').click(); document.querySelector('[data-view=home]').click()`); await wait(900);
+    const pos = await js(`(() => { const r = document.querySelector('.mix-art, .card-art').getBoundingClientRect(); return [Math.round(r.left + r.width * .8), Math.round(r.top + r.height * .25)]; })()`);
+    await js(`(() => { const el = document.querySelector('.mix-art, .card-art'); for (let k = 0; k < 4; k++) el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: ${pos[0]} - 20 + k * 6, clientY: ${pos[1]}, pointerType: 'mouse' })); })()`);
+    await wait(300);
+    console.log('POLISH tilt:', await js(`(document.querySelector('.tilting') || {}).style ? document.querySelector('.tilting').style.transform : 'none'`));
+    await js(`window.__navo.toast('Sevimlilarga qo\\'shildi ♥')`); await wait(500);
+    await shot('polish');
+    app.quit(); return;
+  }
   if (process.env.NAVO_HOME) {
     // home page, library sidebar, mixes, about-the-artist
     win.setSize(+process.env.NAVO_W || 1440, +process.env.NAVO_H || 900);

@@ -148,6 +148,12 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.2.1': [
+    "Emojilar o'rniga Navo'ning o'z ikonkalari — har qanday ekranda aniq",
+    "«+» tugmalari va boshqa ikonkalar ixchamroq",
+    "Kompyuterda muqovalar sichqonchaga qarab 3D buriladi, ustida yorug'lik aksi siljiydi",
+    "Har sahifada takrorlanadigan «pastdan suzib chiqish» animatsiyasi olib tashlandi",
+  ],
   '1.2.0': [
     "Telefonda ilova yana tez va silliq: og'ir fon animatsiyalari o'chirildi (Sozlamalarda yoqish mumkin)",
     "Yangi Bosh sahifa: tezkor plitkalar, «Davom ettiring», sevimli ijrochilaringiz",
@@ -168,7 +174,7 @@ const NEWS = {
     "Yangi logotip: N harfi — bitta tovush to'lqini, bassdan (iliq) baland tovushlarga (sovuq) o'tadi",
     "Pleylistlar: o'z to'plamlaringizni yarating — qo'shiq menyusidan «Pleylistga qo'shish»",
     "To'liq pleyer jonlandi: muqova uchib ochiladi, fon muqova ranglarida bass bilan nafas oladi",
-    "Qo'shiq almashganda muqova karta kabi almashadi, ♥ bosilsa uchqunlar sochiladi",
+    "Qo'shiq almashganda muqova karta kabi almashadi, yurakcha bosilsa uchqunlar sochiladi",
     "Silliq o'tish: qo'shiqlar orasida ovoz asta pasayib-ko'tariladi (Sozlamalarda)",
     "Tinglash statistikasi: jami vaqt, eng sevimli ijrochilar va oxirgi 7 kun",
     "Tugmalar endi yumaloq fonsiz — faqat ikonka",
@@ -188,7 +194,7 @@ const NEWS = {
     "Telefonda reverb yengillashdi: protsessorni kamroq yuklaydi, ovoz uzilmaydi",
   ],
   '1.0.6': [
-    "Telefonda bildirishnoma yangilandi: muqova, rangli fon, vaqt chizig'i, ❤ va yopish tugmalari",
+    "Telefonda bildirishnoma yangilandi: muqova, rangli fon, vaqt chizig'i, sevimli va yopish tugmalari",
     "Kompyuterda vazifalar panelidagi play / pause / next tugmalari har qanday ekranda aniq ko'rinadi",
     "Ovoz effektlari menyusi va bo'limidagi yozuvlar qalinroq va o'qishga qulay",
   ],
@@ -212,7 +218,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.2.0';
+  return appVer || '1.2.1';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -284,9 +290,12 @@ function persist() {
 
 /* ---------- toast ---------- */
 let toastTimer = 0;
+const TOAST_ICONS = [['✨', 'sparkle'], ['♥', 'heart-fill'], ['🌙', 'moon'], ['✓', 'check']];
 function toast(msg, sticky = false) {
   const el = $('#toast');
-  el.textContent = msg;
+  let text = String(msg), ic = null;
+  for (const [e, name] of TOAST_ICONS) if (text.includes(e)) { ic = ic || name; text = text.split(e).join('').trim(); }
+  el.innerHTML = (ic ? `<svg class="i t-ic"><use href="#i-${ic}"/></svg>` : '') + `<span>${esc(text)}</span>`;
   el.classList.add('show');
   clearTimeout(toastTimer);
   if (!sticky) toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
@@ -1625,7 +1634,7 @@ function renderList() {
     const [title, text, showAdd] =
       q ? ['Hech narsa topilmadi', `"${q}" bo'yicha natija yo'q.`, false]
       : S.view === 'top' ? ['Top hali bo\'sh', 'Qo\'shiqlarni tinglang — 30 soniyadan ko\'p eshitilgan har bir qo\'shiq hisoblanadi va eng ko\'p tinglanganlar shu yerda chiqadi.', false]
-      : S.view === 'favorites' ? ['Sevimlilar bo\'sh', 'Yoqqan qo\'shiqlaringizdagi ♥ tugmasini bosing — ular shu yerda paydo bo\'ladi.', false]
+      : S.view === 'favorites' ? ['Sevimlilar bo\'sh', 'Yoqqan qo\'shiqlaringizdagi yurakcha tugmasini bosing — ular shu yerda paydo bo\'ladi.', false]
       : S.view === 'queue' ? ['Navbat bo\'sh', 'Kutubxonadan biror qo\'shiqni ijro eting.', false]
       : ['Kutubxona bo\'sh', IS_DESKTOP ? 'Fayl yoki butun papkani qo\'shing, yoki ularni oynaga sudrab tashlang. MP3, FLAC, WAV, M4A, OGG, WMA, APE va boshqalar.' : 'Telefoningizdagi musiqa fayllarini tanlang — MP3, FLAC, WAV, M4A, OGG, OPUS va boshqalar.', true];
     $('#emptyTitle').textContent = title;
@@ -1955,7 +1964,7 @@ const saveWatch = () => {
 function renderWatch() {
   const box = $('#watchList');
   if (!box) return;
-  box.innerHTML = W.list.map((w, i) => `<span class="watch-chip${w.bad ? ' bad' : ''}" title="${esc(w.bad ? 'Ruxsat yo\'qoldi — papkani qayta ulang' : (w.path || w.name))}">${icon('folder')}<span>${esc(w.name)}</span><button data-watch-del="${i}" aria-label="Uzish">✕</button></span>`).join('');
+  box.innerHTML = W.list.map((w, i) => `<span class="watch-chip${w.bad ? ' bad' : ''}" title="${esc(w.bad ? 'Ruxsat yo\'qoldi — papkani qayta ulang' : (w.path || w.name))}">${icon('folder')}<span>${esc(w.name)}</span><button data-watch-del="${i}" aria-label="Uzish">${icon('close')}</button></span>`).join('');
 }
 async function addWatchFolder() {
   if (IS_DESKTOP) {
@@ -2846,7 +2855,7 @@ async function loadLyrics(t) {
     const ratio = rec.srcDur && dur ? dur / rec.srcDur : 1;
     const scale = Math.abs(ratio - 1) > 0.05 && ratio > 0.6 && ratio < 1.7 ? ratio : 1;
     ly.lines = parseLrc(rec.synced, scale);
-    inner.innerHTML = ly.lines.map((l, i) => `<div class="ly-line${l.text ? '' : ' gap'}" data-i="${i}">${l.text ? esc(l.text) : '♪ ♪ ♪'}</div>`).join('');
+    inner.innerHTML = ly.lines.map((l, i) => `<div class="ly-line${l.text ? '' : ' gap'}" data-i="${i}">${l.text ? esc(l.text) : '<span class="ly-rest">' + icon('note') + icon('note') + icon('note') + '</span>'}</div>`).join('');
     ly.els = $$('.ly-line', inner);
     lyMessage('');
     lyricsTick(true);
@@ -2898,8 +2907,8 @@ function setSleep(v) {
 }
 function syncSleep() {
   const on = !!(sleepT.end || sleepT.eot);
-  const label = sleepT.eot ? '♪' : sleepT.end ? String(Math.max(1, Math.ceil((sleepT.end - Date.now()) / 60000))) : '';
-  $$('.sleep-btn').forEach(b => { b.classList.toggle('on', on); $('.badge', b).textContent = label; });
+  const label = sleepT.end ? String(Math.max(1, Math.ceil((sleepT.end - Date.now()) / 60000))) : '';
+  $$('.sleep-btn').forEach(b => { b.classList.toggle('on', on); $('.badge', b).innerHTML = sleepT.eot ? icon('note') : label; });
 }
 function sleepCheck() {
   const left = sleepT.end - Date.now();
@@ -3163,6 +3172,28 @@ function ripple(btn) {
   o.animate([{ transform: 'translate(-50%, -50%) scale(1)', opacity: .55 }, { transform: 'translate(-50%, -50%) scale(2.1)', opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.2, .7, .3, 1)' }).onfinish = () => o.remove();
 }
 window.addEventListener('resize', () => { if ($('#fullPlayer').classList.contains('open')) fitTitle(); });
+
+/* covers lean toward the cursor, with a light sheen that follows it (desktop, animations on) */
+const TILT_SEL = '.card-art, .grp-art, .mix-art, .art-av, .pl-cover, .qt-art';
+let tiltEl = null, tiltRaf = 0, tiltEv = null;
+function tiltReset(el) { if (!el) return; el.classList.remove('tilting'); el.style.transform = ''; el.style.removeProperty('--gx'); el.style.removeProperty('--gy'); }
+document.addEventListener('pointermove', e => {
+  if (!IS_DESKTOP || S.anim === false || e.pointerType !== 'mouse') return;
+  tiltEv = e;
+  if (tiltRaf) return;
+  tiltRaf = requestAnimationFrame(() => {
+    tiltRaf = 0;
+    const ev = tiltEv, el = ev.target.closest && ev.target.closest(TILT_SEL);
+    if (el !== tiltEl) { tiltReset(tiltEl); tiltEl = el; }
+    if (!el) return;
+    const r = el.getBoundingClientRect(), x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
+    const max = el.classList.contains('qt-art') ? 8 : 13;
+    el.classList.add('tilting');
+    el.style.transform = `perspective(700px) rotateX(${((0.5 - y) * max).toFixed(2)}deg) rotateY(${((x - 0.5) * max).toFixed(2)}deg) scale(1.035)`;
+    el.style.setProperty('--gx', (x * 100).toFixed(1) + '%'); el.style.setProperty('--gy', (y * 100).toFixed(1) + '%');
+  });
+}, { passive: true });
+document.addEventListener('pointerleave', () => { tiltReset(tiltEl); tiltEl = null; });
 
 function openFull() {
   if (!S.currentId) return;
@@ -3583,8 +3614,7 @@ async function boot() {
     const leave = () => {
       if (gone) return; gone = true;
       sp.classList.add('out');
-      if (motionOK()) { document.documentElement.classList.add('enter'); setTimeout(() => document.documentElement.classList.remove('enter'), 1600); }
-      setTimeout(() => sp.remove(), 800);
+        setTimeout(() => sp.remove(), 800);
     };
     const ring = $('.sp-ring.r2', sp);
     const running = ring && ring.getAnimations().length && S.anim !== false;
@@ -3609,6 +3639,6 @@ async function boot() {
 }
 
 // hooks for the automated checks in electron/main.js (test runs only)
-if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ fade: fadeGain ? fadeGain.gain.value : null, outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, toast, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ fade: fadeGain ? fadeGain.gain.value : null, outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
 boot().then(() => showNewsIfUpdated()).catch(() => {});
 })();
