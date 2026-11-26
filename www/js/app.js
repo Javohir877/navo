@@ -148,6 +148,10 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.2.2': [
+    "Phonk uchun yangi effektlar: Super Slowed, Ultra Slowed va Hardstyle",
+    "Hardstyle: tezroq, kuchli bass va to'yingan zarbalar — ovoz baribir chegaradan oshmaydi",
+  ],
   '1.2.1': [
     "Emojilar o'rniga Navo'ning o'z ikonkalari — har qanday ekranda aniq",
     "«+» tugmalari va boshqa ikonkalar ixchamroq",
@@ -218,7 +222,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.2.1';
+  return appVer || '1.2.2';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -384,6 +388,11 @@ function ensureGraph() {
     fadeGain = actx.createGain();
     let node = srcNode.connect(fadeGain).connect(preamp);
     filters.forEach(f => { node = node.connect(f); });
+    // effect colour stage: a bass shelf and a soft drive (saturation) for hardstyle / phonk punch
+    fxBass = actx.createBiquadFilter(); fxBass.type = 'lowshelf'; fxBass.frequency.value = 95; fxBass.gain.value = 0;
+    fxDrive = actx.createWaveShaper(); fxDrive.oversample = LITE_AUDIO ? 'none' : '2x';
+    fxTrim = actx.createGain();
+    node = node.connect(fxBass).connect(fxDrive).connect(fxTrim);
     eqOut = node;
     node.connect(fxDry).connect(fxMix);
     node.connect(preDelay).connect(convolver).connect(wetTone).connect(fxWet).connect(fxMix);
@@ -420,6 +429,12 @@ function applyEq() {
 /* ---------- audio effects: Slowed + Reverb, Nightcore, 8D ---------- */
 let fxDry = null, fxWet = null, convolver = null, fxMix = null, panner = null, lfo = null, lfoDepth = null;
 let preDelay = null, wetTone = null, roomIR = null, hallIR = null, irMode = 'room', irSwap = 0;
+let fxBass = null, fxDrive = null, fxTrim = null, driveNow = -1;
+function driveCurve(amount) {
+  const n = 2048, c = new Float32Array(n), k = 1 + amount * 7, norm = Math.tanh(k);
+  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(k * x) / norm; }
+  return c;
+}
 const FX_PRESETS = {
   'Oddiy':           { speed: 1,    reverb: 0,    d8: false },
   'Slowed + Reverb': { speed: 0.85, reverb: 0.4,  d8: false },
@@ -428,6 +443,10 @@ const FX_PRESETS = {
   'Sped up':         { speed: 1.15, reverb: 0,    d8: false },
   'Nightcore':       { speed: 1.25, reverb: 0.05, d8: false },
   '8D audio':        { speed: 1,    reverb: 0.25, d8: true },
+  // phonk
+  'Super Slowed':    { speed: 0.74, reverb: 0.48, d8: false, bass: 3 },
+  'Ultra Slowed':    { speed: 0.62, reverb: 0.62, d8: false, hall: true, bass: 4 },
+  'Hardstyle':       { speed: 1.12, reverb: 0.1,  d8: false, bass: 8, drive: 0.55 },
 };
 function makeImpulse(ctx, seconds, decay) {
   const rate = ctx.sampleRate, len = Math.floor(rate * seconds), pre = Math.floor(rate * 0.02);
@@ -504,6 +523,13 @@ function applyFx() {
     setWetPath(f.reverb > 0);
     if (lfoDepth) lfoDepth.gain.setTargetAtTime(f.d8 ? 0.9 : 0, t, 0.2);
     fxMix.gain.setTargetAtTime(f.d8 ? 0.7 : 1, t, 0.2);   // panning to one side adds up to +3 dB
+    if (fxBass) {
+      const bass = f.bass || 0, drive = f.drive || 0;
+      fxBass.gain.setTargetAtTime(bass, t, 0.08);
+      if (drive !== driveNow) { fxDrive.curve = drive > 0 ? driveCurve(drive) : null; driveNow = drive; }
+      // keep the overall level steady: the shelf and the drive both add loudness
+      fxTrim.gain.setTargetAtTime(Math.pow(10, -(bass * 0.4) / 20) / (1 + drive * 0.35), t, 0.08);
+    }
   }
   const name = f.preset || 'Maxsus';
   applyStyle();

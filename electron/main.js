@@ -781,7 +781,7 @@ async function devScreenshots() {
       const r = [...document.querySelectorAll('#eqBands input')]; r.forEach((x, i) => { x.value = ${on} && i < 3 ? x.max : 0; x.dispatchEvent(new Event('input', { bubbles: true })); }); })()`);
     for (const boost of [false, true]) {
       await eq(boost);
-      for (const p of ['Oddiy', 'Slowed + Reverb', 'Concert Hall', '8D audio', 'Nightcore']) {
+      for (const p of ['Oddiy', 'Super Slowed', 'Ultra Slowed', 'Hardstyle']) {
         const r = await js(`(async () => { const n = window.__navo; n.setFxPreset(${JSON.stringify(p)});
           await new Promise(r => setTimeout(r, 2000));
           const an = window.__outAn, buf = new Float32Array(an.fftSize); let peak = 0, hot = 0, tot = 0;
