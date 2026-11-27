@@ -152,6 +152,11 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.3.2': [
+    "Ekran o'chganda effektlar (Slowed, Reverb, Concert Hall…) bilan ham ovoz endi qotmaydi: telefon uchun reverb qaytadan yozildi",
+    "Ekran o'chiq paytda yangi qo'shiq boshlanganda ortiqcha og'ir ish qilinmaydi — ovoz silliq o'tadi",
+    "Batareya tejash rejimidan chiqish: Navo bir marta ruxsat so'raydi (Sozlamalar → Ovoz'da ham bor)",
+  ],
   '1.3.1': [
     "Telefonda qo'shiqni tahrirlash oynasi pastdan chiqadigan qulay panelga aylandi",
     "Rasm tanlash: katta Galereya, Internet va O'chirish tugmalari, muqovalar katta to'rda",
@@ -240,7 +245,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.3.1';
+  return appVer || '1.3.2';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -395,8 +400,8 @@ function ensureGraph() {
     // Audio effects: reverb (dry/wet), 8D (auto-panner driven by an LFO — no JS per frame)
     fxDry = actx.createGain();
     fxWet = actx.createGain(); fxWet.gain.value = 0;
-    convolver = actx.createConvolver();
-    convolver.buffer = roomIR = makeImpulse(actx, LITE_AUDIO ? 2.2 : 3.2, 2.6); irMode = 'room';
+    if (LITE_AUDIO) { algoRev = makeAlgoReverb(actx); convolver = algoRev.input; irMode = 'room'; }   // phones: see makeAlgoReverb
+    else { convolver = actx.createConvolver(); convolver.buffer = roomIR = makeImpulse(actx, 3.2, 2.6); irMode = 'room'; }
     preDelay = actx.createDelay(0.2); preDelay.delayTime.value = 0.01;
     wetTone = actx.createBiquadFilter(); wetTone.type = 'lowpass'; wetTone.frequency.value = 16000; wetTone.Q.value = 0.5;
     fxMix = actx.createGain();
@@ -413,7 +418,8 @@ function ensureGraph() {
     node = node.connect(fxBass).connect(fxDrive).connect(fxTrim);
     eqOut = node;
     node.connect(fxDry).connect(fxMix);
-    node.connect(preDelay).connect(convolver).connect(wetTone).connect(fxWet).connect(fxMix);
+    node.connect(preDelay).connect(convolver);
+    (algoRev ? algoRev.output : convolver).connect(wetTone).connect(fxWet).connect(fxMix);
     let out = fxMix;
     if (panner) { lfo.connect(lfoDepth).connect(panner.pan); lfo.start(); out = fxMix.connect(panner); }
     // Brick-wall limiter: dry + reverb + EQ boosts can pass 0 dB, which crackles in headphones.
@@ -493,7 +499,54 @@ function applyEq() {
 }
 /* ---------- audio effects: Slowed + Reverb, Nightcore, 8D ---------- */
 let fxDry = null, fxWet = null, convolver = null, fxMix = null, panner = null, lfo = null, lfoDepth = null;
-let preDelay = null, wetTone = null, roomIR = null, hallIR = null, irMode = 'room', irSwap = 0;
+let preDelay = null, wetTone = null, roomIR = null, hallIR = null, irMode = 'room', irSwap = 0, algoRev = null;
+/* Phone reverb, built only from small native nodes (a Freeverb-style network: parallel
+   damped combs, then allpass diffusers, slightly different per ear for width).
+   Why not the ConvolverNode: with a reverb several seconds long Chrome renders most of it
+   on a separate normal-priority thread. When the screen turns off Android slows that
+   thread down, the reverb misses its deadline and the music stutters. This network runs
+   entirely on the real-time audio thread at a small, fixed cost. */
+function makeAlgoReverb(ctx) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const split = ctx.createChannelSplitter(2), merge = ctx.createChannelMerger(2);
+  input.connect(split);
+  const combs = [];
+  const rate = 44100, spread = 23, DAMP = 0.3;
+  const COMB = [1116, 1277, 1422, 1557, 1188, 1356];
+  const AP = [556, 341];
+  for (let ch = 0; ch < 2; ch++) {
+    const inG = ctx.createGain(); inG.gain.value = 0.12;
+    split.connect(inG, ch);
+    const sum = ctx.createGain();
+    for (const len of COMB) {
+      const d = ctx.createDelay(0.1); d.delayTime.value = (len + ch * spread) / rate;
+      // one-pole low-pass (never above unity gain, so the loop can never run away)
+      const damp = ctx.createIIRFilter([1 - DAMP], [1, -DAMP]);
+      const fb = ctx.createGain(); fb.gain.value = 0.93;     // start at the room value: a gain of 1 would ring up at start
+      inG.connect(d); d.connect(damp).connect(fb).connect(d); d.connect(sum);
+      combs.push({ fb });
+    }
+    let node = sum;
+    for (const len of AP) {                       // Schroeder allpass: v = x + g·v(n-d), y = v(n-d) - g·v
+      const g = 0.5;
+      const v = ctx.createGain(), d = ctx.createDelay(0.05), fb = ctx.createGain(), ff = ctx.createGain(), out = ctx.createGain();
+      d.delayTime.value = (len + ch * spread) / rate; fb.gain.value = g; ff.gain.value = -g;
+      node.connect(v); v.connect(d); d.connect(fb).connect(v);
+      d.connect(out); v.connect(ff).connect(out);
+      node = out;
+    }
+    node.connect(merge, 0, ch);
+  }
+  merge.connect(output);
+  output.gain.value = 0.41;
+  const set = (hall, t = ctx.currentTime) => {
+    for (const c of combs) {
+      c.fb.gain.setTargetAtTime(hall ? 0.965 : 0.93, t, 0.05);
+    }
+    output.gain.setTargetAtTime(hall ? 0.58 : 0.41, t, 0.05);   // matched by measurement to the desktop reverb's level
+  };
+  return { input, output, set };
+}
 let fxBass = null, fxDrive = null, fxTrim = null, driveNow = -1;
 function driveCurve(amount) {
   const n = 2048, c = new Float32Array(n), k = 1 + amount * 7, norm = Math.tanh(k);
@@ -556,7 +609,7 @@ function setReverbRoom(hall) {
   fxWet.gain.setTargetAtTime(0, t, 0.03);                   // fade the old tail out, then swap (no click)
   setTimeout(() => {
     if (id !== irSwap) return;
-    convolver.buffer = hall ? (hallIR || (hallIR = makeHallImpulse(actx))) : roomIR;
+    if (algoRev) algoRev.set(hall); else convolver.buffer = hall ? (hallIR || (hallIR = makeHallImpulse(actx))) : roomIR;
     const n = actx.currentTime;
     preDelay.delayTime.setTargetAtTime(hall ? 0.045 : 0.01, n, 0.01);
     wetTone.frequency.setTargetAtTime(hall ? 5200 : 16000, n, 0.01);
@@ -660,7 +713,9 @@ async function loadIndex(i, autoplay = true, startAt = 0) {
   audio.src = src;
   applyNorm(t);
   fadeIn();
-  if (S.bass) prepareBeats(t);
+  // phone with the screen off: nobody sees the bass effect, and decoding the whole song for it
+  // would compete with playback for the CPU. It runs when the screen comes back on.
+  if (S.bass && !(PHONE_FX && document.hidden)) prepareBeats(t);
   if (startAt > 0) audio.addEventListener('loadedmetadata', () => { try { audio.currentTime = startAt; } catch { /* */ } }, { once: true });
   if (autoplay) play();
   persist();
@@ -1285,10 +1340,13 @@ async function prepareBeats(t) {
     document.documentElement.dataset.beats = res.times.length;
     // pre-analyse the next song so it is in sync from its first hit
     const nextT = S.tracks.get(S.queue[S.qIndex + 1]);
-    if (nextT) setTimeout(() => analyzeBeats(nextT).catch(() => {}), 1500);
+    if (nextT) setTimeout(() => { if (!(PHONE_FX && document.hidden)) analyzeBeats(nextT).catch(() => {}); }, 1500);
   } catch (e) { console.warn('beat analysis failed', e); }
 }
 audio.addEventListener('seeked', seekBeat);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && S.bass && cur() && beatFor !== S.currentId) prepareBeats(cur());
+});
 
 
 /* ============================================================
@@ -3369,6 +3427,48 @@ function syncEq() {
   });
 }
 
+/* ---------- phone: ask to be exempt from battery optimisation ----------
+   With the screen off many phones (Xiaomi, Samsung, Tecno…) throttle apps that are not
+   exempt, even ones playing music; the sound then stutters. One system dialog fixes it. */
+const BATT = { exempt: true, maker: '' };
+const TIP_MI = "Xiaomi / Redmi / POCO: Sozlamalar → Ilovalar → Navo → Batareya tejash → «Cheklovsiz».";
+const TIP_HW = "Huawei / Honor: Sozlamalar → Batareya → Ilovalarni ishga tushirish → Navo → qo'lda boshqarish.";
+const TIP_OP = "OPPO / realme / OnePlus: Sozlamalar → Batareya → Navo → «Fonda ishlashga ruxsat».";
+const TIP_TC = "Tecno / Infinix: Sozlamalar → Batareya → Navo → «Cheklamaslik».";
+const MAKER_TIPS = {
+  xiaomi: TIP_MI, redmi: TIP_MI, poco: TIP_MI,
+  samsung: "Samsung: Sozlamalar → Ilovalar → Navo → Batareya → «Cheklanmagan».",
+  huawei: TIP_HW, honor: TIP_HW, oppo: TIP_OP, realme: TIP_OP, oneplus: TIP_OP,
+  vivo: "vivo: Sozlamalar → Batareya → Fonda yuqori quvvat sarfi → Navo'ni yoqing.",
+  tecno: TIP_TC, infinix: TIP_TC,
+};
+const makerTip = () => MAKER_TIPS[String(BATT.maker || '').toLowerCase().split(/\s/)[0]] || '';
+async function battRefresh() {
+  if (!NativeMedia || !NativeMedia.batteryStatus) return;
+  try { Object.assign(BATT, await NativeMedia.batteryStatus()); } catch { return; }
+  const st = $('#battState'), b = $('#battAsk');
+  if (st) st.textContent = BATT.exempt
+    ? 'Yoqilgan ✓ Navo ekran o\'chganda ham to\'liq tezlikda ishlaydi.' + (makerTip() ? ' Baribir uzilsa: ' + makerTip() : '')
+    : 'O\'chiq — telefon Navo\'ni sekinlashtirishi mumkin, ovoz qotib chiqadi. Ruxsat bering.';
+  if (b) b.classList.toggle('hidden', BATT.exempt);
+  const c = $('#battCard'); if (c) c.classList.toggle('ok', BATT.exempt);
+}
+function battAsk() { $('#battModal').classList.add('hidden'); if (NativeMedia && NativeMedia.batteryAsk) NativeMedia.batteryAsk().catch(() => {}); }
+function battMaybePrompt() {
+  if (!NativeMedia || BATT.exempt) return;
+  let asked = 0; try { asked = +localStorage.getItem('navo.battAsked') || 0; } catch { /* */ }
+  if (asked >= 2) return;                                   // asked twice: the Settings card stays for later
+  try { localStorage.setItem('navo.battAsked', String(asked + 1)); } catch { /* */ }
+  $('#battMaker').textContent = makerTip() ? 'Agar keyin ham uzilsa: ' + makerTip() : '';
+  $('#battModal').classList.remove('hidden');
+}
+if (NativeMedia) {
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) battRefresh(); });
+  setTimeout(battRefresh, 1500);
+  let battPrompted = false;
+  audio.addEventListener('playing', () => { if (!battPrompted) { battPrompted = true; setTimeout(async () => { await battRefresh(); battMaybePrompt(); }, 2500); } });
+}
+
 /* ---------- settings: section tabs that follow the scroll ---------- */
 function setGroup(id, smooth = true) {
   const box = $('#setScroll'), g = $('#' + id);
@@ -3608,6 +3708,11 @@ function bind() {
   $('#normOn').checked = S.norm;
   $('#normOn').addEventListener('change', e => { S.norm = e.target.checked; applyNorm(cur(), 0.6); persist(); toast(S.norm ? 'Ovoz tenglashtirish yoqildi ✓' : 'Ovoz tenglashtirish o\'chirildi'); });
   initSetTabs();
+  if (!NativeMedia) $('#battCard').remove();      // only the Android app has this setting
+  else $('#battAsk').addEventListener('click', battAsk);
+  $('#battGo').addEventListener('click', battAsk);
+  $('#battLater').addEventListener('click', () => $('#battModal').classList.add('hidden'));
+  $('#battModal').addEventListener('pointerdown', e => { if (e.target.id === 'battModal') $('#battModal').classList.add('hidden'); });
   $('#backupMake').addEventListener('click', makeBackup);
   $('#backupLoad').addEventListener('click', () => { const i = $('#backupInput'); i.value = ''; i.click(); });
   $('#backupInput').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadBackup(f); });
@@ -3892,6 +3997,6 @@ async function boot() {
 }
 
 // hooks for the automated checks in electron/main.js (test runs only)
-if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, toast, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ raw: loudAn ? (loudAn.getFloatTimeDomainData(loudBuf), +(10 * Math.log10(loudBuf.reduce((s, x) => s + x * x, 0) / loudBuf.length + 1e-12)).toFixed(1)) : null, ng: normGain ? +normGain.gain.value.toFixed(3) : null, fade: fadeGain ? fadeGain.gain.value : null, outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { makeAlgoReverb, makeImpulse, makeHallImpulse, showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, toast, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ algo: !!algoRev, raw: loudAn ? (loudAn.getFloatTimeDomainData(loudBuf), +(10 * Math.log10(loudBuf.reduce((s, x) => s + x * x, 0) / loudBuf.length + 1e-12)).toFixed(1)) : null, ng: normGain ? +normGain.gain.value.toFixed(3) : null, fade: fadeGain ? fadeGain.gain.value : null, outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
 boot().then(() => showNewsIfUpdated()).catch(() => {});
 })();

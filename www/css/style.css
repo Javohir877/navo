@@ -1530,3 +1530,13 @@ kbd { display: inline-grid; place-items: center; min-width: 30px; height: 28px; 
   .edit-card { scrollbar-width: none; }
   .edit-card::-webkit-scrollbar { display: none; }
 }
+
+/* battery exemption (phones) */
+.batt-card .btn { flex: none; }
+.batt-card.ok .fx-ico { color: #4ade80; background: rgba(74, 222, 128, .14); }
+.batt-modal { text-align: center; max-width: 400px; }
+.batt-modal .edit-note { font-size: 13.5px; margin: 0 0 10px; }
+.batt-ic { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 18px; margin: 4px auto 12px; color: #0b0a14; background: var(--accent); box-shadow: 0 10px 26px -12px rgba(var(--accent-rgb), .9); }
+.batt-ic .i { width: 26px; height: 26px; }
+.batt-modal .modal-actions { justify-content: center; }
+.batt-modal .modal-actions .btn { flex: 1; }

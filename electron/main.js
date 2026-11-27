@@ -626,6 +626,7 @@ async function devScreenshots() {
       win.webContents.send('open-paths', fs.readdirSync(dir).filter(f => /[.](m4a|mp3|flac)$/i.test(f)).map(f => path.join(dir, f)));
       await wait(9000);
     }
+    if (process.env.NAVO_LITE) { await win.loadURL('about:blank'); await win.loadURL('navo://app/index.html#lite'); await wait(5000); }   // phone audio path (full reload, not a hash change)
     await js(`document.querySelector('#newsOk') && document.querySelector('#newsOk').click()`);
     for (const st of JSON.parse(fs.readFileSync(process.env.NAVO_STEPS, 'utf8'))) {
       if (st.js) { const r = await js(st.js); if (st.log) console.log('STEP', st.log, typeof r === 'string' ? r : JSON.stringify(r)); }

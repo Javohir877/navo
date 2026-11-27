@@ -182,6 +182,11 @@
             <div class="watch-meta"><b>Silliq o'tish</b><small>Qo'shiq oxirida ovoz asta pasayadi, keyingisi asta ko'tariladi</small>
               <label class="fx-sl fade-sl"><span>Davomiyligi</span><input type="range" id="fadeSecs" min="0" max="8" step="1" value="0"><output id="fadeOut">O'chiq</output></label></div>
           </div>
+          <div class="set-card watch-card batt-card mobile-only" id="battCard">
+            <span class="fx-ico"><svg class="i"><use href="#i-moon"/></svg></span>
+            <div class="watch-meta"><b>Ekran o'chganda uzluksiz ijro</b><small id="battState">Tekshirilmoqda…</small></div>
+            <button class="btn btn-primary sm" id="battAsk">Ruxsat berish</button>
+          </div>
         </section>
 
         <section class="set-group" id="sgFx">
@@ -479,6 +484,16 @@
     <h3 id="newsTitle"></h3>
     <ul id="newsList" class="news-list"></ul>
     <div class="modal-actions"><button class="btn btn-primary" id="newsOk">Zo'r</button></div>
+  </div>
+</div>
+
+<div id="battModal" class="modal hidden">
+  <div class="modal-card glass pl-card batt-modal">
+    <span class="batt-ic"><svg class="i"><use href="#i-moon"/></svg></span>
+    <h3>Ekran o'chganda ham uzilmasin</h3>
+    <p class="edit-note">Telefon batareyani tejash uchun fondagi ilovalarni sekinlashtiradi, shunda ovoz qotib-qotib chiqishi mumkin. Navo'ga cheklovsiz ishlashga ruxsat bering — keyingi oynada «Ruxsat berish»ni bosing.</p>
+    <p class="edit-note" id="battMaker"></p>
+    <div class="modal-actions"><button class="btn btn-ghost" id="battLater">Keyinroq</button><button class="btn btn-primary" id="battGo">Ruxsat berish</button></div>
   </div>
 </div>
 

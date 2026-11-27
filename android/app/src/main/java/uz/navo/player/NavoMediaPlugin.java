@@ -1,6 +1,10 @@
 package uz.navo.player;
 
 import android.Manifest;
+import android.content.Context;
+import android.net.Uri;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -78,6 +82,39 @@ public class NavoMediaPlugin extends Plugin {
         try {
             getContext().startService(new Intent(getContext(), PlaybackService.class).setAction(PlaybackService.ACTION_STOP));
         } catch (Exception ignored) {}
+        call.resolve();
+    }
+
+    /** Is Navo exempt from battery optimisation (so the system does not slow it with the screen off)? */
+    @PluginMethod
+    public void batteryStatus(PluginCall call) {
+        boolean exempt = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            exempt = pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
+        }
+        JSObject o = new JSObject();
+        o.put("exempt", exempt);
+        o.put("maker", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER);
+        call.resolve(o);
+    }
+
+    /** Opens the system dialog that lets the user exempt Navo; falls back to the settings list. */
+    @PluginMethod
+    public void batteryAsk(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) { call.resolve(); return; }
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getContext().getPackageName()));
+            if (getActivity() == null) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        } catch (Exception e) {
+            try {
+                Intent i = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                if (getActivity() == null) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(i);
+            } catch (Exception ignored) { }
+        }
         call.resolve();
     }
 
