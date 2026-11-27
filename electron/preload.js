@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('navo', {
   onProgress: cb => ipcRenderer.on('scan-progress', (_e, d) => cb(d)),
   onOpenPaths: cb => ipcRenderer.on('open-paths', (_e, p) => cb(p)),
   saveImage: (dataUrl, name) => ipcRenderer.invoke('save-image', dataUrl, name),
+  saveFile: (name, text) => ipcRenderer.invoke('save-file', name, text),
   watchSet: dirs => ipcRenderer.invoke('watch-set', dirs),
   watchScan: dirs => ipcRenderer.invoke('watch-scan', dirs),
   pickWatchFolder: () => ipcRenderer.invoke('pick-watch-folder'),

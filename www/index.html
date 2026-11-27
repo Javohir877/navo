@@ -59,6 +59,10 @@
     <symbol id="i-keys" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7.5 14h9"/></symbol>
     <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3.5" y="9" width="17" height="11.5" rx="2"/><path d="M2.5 9h19M12 9v11.5M12 9S10.6 4 8 4a2.3 2.3 0 0 0 0 4.6M12 9s1.4-5 4-5a2.3 2.3 0 0 1 0 4.6"/></symbol>
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></symbol>
   </defs>
 </svg>
 
@@ -100,7 +104,8 @@
       <button class="nav-item hidden" data-view="favorites"><svg class="i"><use href="#i-heart"/></svg><span>Sevimlilar</span><em id="cntFav"></em></button>
       <button class="nav-item" data-view="queue"><svg class="i"><use href="#i-queue"/></svg><span>Navbat</span></button>
       <button class="nav-item" data-view="stats"><svg class="i"><use href="#i-chart"/></svg><span>Statistika</span></button>
-      <button class="nav-item" data-view="eq"><svg class="i"><use href="#i-eq"/></svg><span>Sozlamalar</span></button>
+      <button class="nav-item" data-view="history"><svg class="i"><use href="#i-clock"/></svg><span>Tarix</span></button>
+      <button class="nav-item" data-view="eq"><svg class="i"><use href="#i-gear"/></svg><span>Sozlamalar</span></button>
     </nav>
     <div class="lib-side">
       <div class="lib-side-head"><span><svg class="i"><use href="#i-library"/></svg>Kutubxonangiz</span><button class="pl-new" data-act="side-add" title="Yaratish yoki qo'shish"><svg class="i"><use href="#i-plus"/></svg></button></div>
@@ -124,7 +129,7 @@
       <div class="top-tools list-only">
         <label class="search">
           <svg class="i"><use href="#i-search"/></svg>
-          <input id="search" type="search" placeholder="Qidirish…" autocomplete="off">
+          <input id="search" type="search" placeholder="Qidirish…" autocomplete="off"><kbd class="desktop-only search-kbd">Ctrl K</kbd>
         </label>
         <button class="round-btn" data-act="sort-menu" title="Saralash"><svg class="i"><use href="#i-sort"/></svg></button>
         <button class="round-btn" data-act="shuffle-all" title="Aralash ijro"><svg class="i"><use href="#i-shuffle"/></svg></button>
@@ -153,79 +158,118 @@
     <section id="viewStats" class="view hidden"><div class="stats" id="statsBox"></div></section>
 
     <section id="viewEq" class="view hidden">
-      <div class="eq-card">
-        <div class="eq-head">
-          <label class="switch"><input type="checkbox" id="eqOn"><span></span></label>
-          <div><b>Ekvalayzer</b><small id="eqState">Yoqilgan</small></div>
-          <button class="btn btn-ghost sm" id="eqReset">Tiklash</button>
-        </div>
-        <div class="presets" id="eqPresets"></div>
-        <div class="eq-bands" id="eqBands"></div>
-        <div class="fx-card">
-          <div class="eq-head">
-            <span class="fx-ico"><svg class="i"><use href="#i-flame"/></svg></span>
-            <div><b>Bass effekti uslubi</b><small id="styleState">Avto</small></div>
-          </div>
-          <div class="presets" id="stylePresets"></div>
-        </div>
-        <div class="fx-card">
-          <div class="eq-head">
-            <span class="fx-ico"><svg class="i"><use href="#i-sparkle"/></svg></span>
-            <div><b>Audio effektlar</b><small id="fxState">Oddiy</small></div>
-            <button class="btn btn-ghost sm" id="fxReset">Tiklash</button>
-          </div>
-          <div class="presets" id="fxPresets"></div>
-          <div class="fx-sliders">
-            <label class="fx-sl"><span>Tezlik</span><input type="range" id="fxSpeed" min="0.5" max="1.5" step="0.01" value="1"><output id="fxSpeedOut">1.00x</output></label>
-            <label class="fx-sl"><span>Reverb</span><input type="range" id="fxReverb" min="0" max="100" step="1" value="0"><output id="fxReverbOut">0%</output></label>
+      <nav class="set-tabs" id="setTabs">
+        <button data-sg="sgSound" class="on">Ovoz</button><button data-sg="sgFx">Effektlar</button><button data-sg="sgLook">Ko'rinish</button><button data-sg="sgLib">Kutubxona</button><button data-sg="sgApp">Ilova</button>
+      </nav>
+      <div class="eq-card" id="setScroll">
+        <section class="set-group" id="sgSound">
+          <h2 class="set-h"><svg class="i"><use href="#i-volume"/></svg>Ovoz</h2>
+          <div class="fx-card">
+            <div class="eq-head">
+              <label class="switch"><input type="checkbox" id="eqOn"><span></span></label>
+              <div><b>Ekvalayzer</b><small id="eqState">Yoqilgan</small></div>
+              <button class="btn btn-ghost sm" id="eqReset">Tiklash</button>
+            </div>
+            <div class="presets" id="eqPresets"></div>
+            <div class="eq-bands" id="eqBands"></div>
           </div>
           <div class="set-card">
-            <label class="switch"><input type="checkbox" id="fx8d"><span></span></label>
-            <div><b>8D audio</b><small>Ovoz boshingiz atrofida aylanadi — quloqchinda tinglang</small></div>
+            <label class="switch"><input type="checkbox" id="normOn"><span></span></label>
+            <div><b>Ovozni tenglashtirish</b><small>Baland yozilgan qo'shiqlar pasayadi, past yozilganlari ko'tariladi — ovozni qayta-qayta burash shart emas</small></div>
           </div>
-        </div>
-        <div class="set-card">
-          <label class="switch"><input type="checkbox" id="blurOn"><span></span></label>
-          <div><b>Blur effektlari</b><small>O'chirsangiz, ilova sust kompyuter/telefonda ham tez ishlaydi</small></div>
-        </div>
-        <div class="set-card">
-          <label class="switch"><input type="checkbox" id="netCoversOn"><span></span></label>
-          <div><b>Muqovani internetdan topish</b><small>Rasmi yo'q qo'shiqlar uchun muqova Apple Music, Deezer va MusicBrainz'dan qidiriladi</small></div>
-        </div>
-        <div class="set-card">
-          <label class="switch"><input type="checkbox" id="bassOn"><span></span></label>
-          <div><b>Bass effekti</b><small>Bass urilganda muqova yengil "nafas oladi" va porlaydi</small></div>
-        </div>
-        <div class="set-card">
-          <label class="switch"><input type="checkbox" id="vizOn"><span></span></label>
-          <div><b>Vizualizator</b><small>Musiqaga qarab harakatlanadigan chiziqlar</small></div>
-        </div>
-        <div class="set-card">
-          <label class="switch"><input type="checkbox" id="animOn"><span></span></label>
-          <div><b>Animatsiyalar</b><small>Uchib ochiladigan muqova, tirik fon, uchqunlar. O'chirsangiz ilova sokinroq bo'ladi</small></div>
-        </div>
-        <div class="set-card fade-card">
-          <span class="fx-ico"><svg class="i"><use href="#i-fade"/></svg></span>
-          <div class="watch-meta"><b>Silliq o'tish</b><small>Qo'shiq oxirida ovoz asta pasayadi, keyingisi asta ko'tariladi</small>
-            <label class="fx-sl fade-sl"><span>Davomiyligi</span><input type="range" id="fadeSecs" min="0" max="8" step="1" value="0"><output id="fadeOut">O'chiq</output></label></div>
-        </div>
-        <div class="set-card stats-card mobile-only" data-view-go="stats">
-          <span class="fx-ico"><svg class="i"><use href="#i-chart"/></svg></span>
-          <div class="watch-meta"><b>Tinglash statistikasi</b><small>Qancha tingladingiz, sevimli ijrochilaringiz va kunlik faollik</small></div>
-          <svg class="i chev"><use href="#i-next"/></svg>
-        </div>
-        <div class="set-card watch-card">
-          <span class="fx-ico"><svg class="i"><use href="#i-folder"/></svg></span>
-          <div class="watch-meta"><b>Kuzatiladigan papkalar</b><small>Shu papkaga tashlangan qo'shiqlar kutubxonaga o'zi qo'shiladi</small>
-            <div class="watch-list" id="watchList"></div></div>
-          <button class="btn btn-ghost sm" id="watchAdd"><svg class="i"><use href="#i-plus"/></svg>Papka ulash</button>
-        </div>
-        <div class="about-card">
-          <img src="img/logo.svg" alt="">
-          <div class="about-meta"><b>Navo <span id="aboutVer"></span></b><small id="aboutState">Yangilanish tekshirilmagan</small></div>
-          <button class="btn btn-ghost sm" id="checkUpdate">Yangilanishni tekshirish</button>
-          <button class="btn btn-ghost sm desktop-only" id="showKeys"><svg class="i"><use href="#i-keys"/></svg>Tezkor tugmalar</button>
-        </div>
+          <div class="set-card fade-card">
+            <span class="fx-ico"><svg class="i"><use href="#i-fade"/></svg></span>
+            <div class="watch-meta"><b>Silliq o'tish</b><small>Qo'shiq oxirida ovoz asta pasayadi, keyingisi asta ko'tariladi</small>
+              <label class="fx-sl fade-sl"><span>Davomiyligi</span><input type="range" id="fadeSecs" min="0" max="8" step="1" value="0"><output id="fadeOut">O'chiq</output></label></div>
+          </div>
+        </section>
+
+        <section class="set-group" id="sgFx">
+          <h2 class="set-h"><svg class="i"><use href="#i-sparkle"/></svg>Effektlar</h2>
+          <div class="fx-card">
+            <div class="eq-head">
+              <span class="fx-ico"><svg class="i"><use href="#i-sparkle"/></svg></span>
+              <div><b>Audio effektlar</b><small id="fxState">Oddiy</small></div>
+              <button class="btn btn-ghost sm" id="fxReset">Tiklash</button>
+            </div>
+            <div class="presets" id="fxPresets"></div>
+            <div class="fx-sliders">
+              <label class="fx-sl"><span>Tezlik</span><input type="range" id="fxSpeed" min="0.5" max="1.5" step="0.01" value="1"><output id="fxSpeedOut">1.00x</output></label>
+              <label class="fx-sl"><span>Reverb</span><input type="range" id="fxReverb" min="0" max="100" step="1" value="0"><output id="fxReverbOut">0%</output></label>
+            </div>
+            <div class="set-card">
+              <label class="switch"><input type="checkbox" id="fx8d"><span></span></label>
+              <div><b>8D audio</b><small>Ovoz boshingiz atrofida aylanadi — quloqchinda tinglang</small></div>
+            </div>
+          </div>
+          <div class="fx-card">
+            <div class="eq-head">
+              <span class="fx-ico"><svg class="i"><use href="#i-flame"/></svg></span>
+              <div><b>Bass effekti uslubi</b><small id="styleState">Avto</small></div>
+            </div>
+            <div class="presets" id="stylePresets"></div>
+          </div>
+        </section>
+
+        <section class="set-group" id="sgLook">
+          <h2 class="set-h"><svg class="i"><use href="#i-image"/></svg>Ko'rinish</h2>
+          <div class="set-card">
+            <label class="switch"><input type="checkbox" id="animOn"><span></span></label>
+            <div><b>Animatsiyalar</b><small>Uchib ochiladigan muqova, tirik fon, uchqunlar. O'chirsangiz ilova sokinroq bo'ladi</small></div>
+          </div>
+          <div class="set-card">
+            <label class="switch"><input type="checkbox" id="bassOn"><span></span></label>
+            <div><b>Bass effekti</b><small>Bass urilganda muqova yengil "nafas oladi" va porlaydi</small></div>
+          </div>
+          <div class="set-card">
+            <label class="switch"><input type="checkbox" id="vizOn"><span></span></label>
+            <div><b>Vizualizator</b><small>Musiqaga qarab harakatlanadigan chiziqlar</small></div>
+          </div>
+          <div class="set-card">
+            <label class="switch"><input type="checkbox" id="blurOn"><span></span></label>
+            <div><b>Blur effektlari</b><small>O'chirsangiz, ilova sust kompyuter/telefonda ham tez ishlaydi</small></div>
+          </div>
+        </section>
+
+        <section class="set-group" id="sgLib">
+          <h2 class="set-h"><svg class="i"><use href="#i-library"/></svg>Kutubxona</h2>
+          <div class="set-card watch-card">
+            <span class="fx-ico"><svg class="i"><use href="#i-folder"/></svg></span>
+            <div class="watch-meta"><b>Kuzatiladigan papkalar</b><small>Shu papkaga tashlangan qo'shiqlar kutubxonaga o'zi qo'shiladi</small>
+              <div class="watch-list" id="watchList"></div></div>
+            <button class="btn btn-ghost sm" id="watchAdd"><svg class="i"><use href="#i-plus"/></svg>Papka ulash</button>
+          </div>
+          <div class="set-card">
+            <label class="switch"><input type="checkbox" id="netCoversOn"><span></span></label>
+            <div><b>Muqovani internetdan topish</b><small>Rasmi yo'q qo'shiqlar uchun muqova Apple Music, Deezer va MusicBrainz'dan qidiriladi</small></div>
+          </div>
+          <div class="set-card watch-card backup-card">
+            <span class="fx-ico"><svg class="i"><use href="#i-save"/></svg></span>
+            <div class="watch-meta"><b>Zaxira nusxa</b><small>Pleylistlar, sevimlilar, tinglash soni, tahrirlar va sozlamalar bitta faylga saqlanadi. Qayta o'rnatganda qo'shiqlarni qo'shib, shu fayldan tiklang</small></div>
+            <div class="backup-btns"><button class="btn btn-ghost sm" id="backupMake"><svg class="i"><use href="#i-save"/></svg>Saqlash</button><button class="btn btn-ghost sm" id="backupLoad"><svg class="i"><use href="#i-folder"/></svg>Tiklash</button></div>
+            <input type="file" id="backupInput" accept=".json,application/json" hidden>
+          </div>
+        </section>
+
+        <section class="set-group" id="sgApp">
+          <h2 class="set-h"><svg class="i"><use href="#i-gear"/></svg>Ilova</h2>
+          <div class="set-card stats-card" data-view-go="stats">
+            <span class="fx-ico"><svg class="i"><use href="#i-chart"/></svg></span>
+            <div class="watch-meta"><b>Tinglash statistikasi</b><small>Qancha tingladingiz, sevimli ijrochilaringiz va kunlik faollik</small></div>
+            <svg class="i chev"><use href="#i-chev-right"/></svg>
+          </div>
+          <div class="set-card stats-card" data-view-go="history">
+            <span class="fx-ico"><svg class="i"><use href="#i-clock"/></svg></span>
+            <div class="watch-meta"><b>Tinglash tarixi</b><small>Oxirgi tinglagan qo'shiqlaringiz, vaqti bilan</small></div>
+            <svg class="i chev"><use href="#i-chev-right"/></svg>
+          </div>
+          <div class="about-card">
+            <img src="img/logo.svg" alt="">
+            <div class="about-meta"><b>Navo <span id="aboutVer"></span></b><small id="aboutState">Yangilanish tekshirilmagan</small></div>
+            <button class="btn btn-ghost sm" id="checkUpdate">Yangilanishni tekshirish</button>
+            <button class="btn btn-ghost sm desktop-only" id="showKeys"><svg class="i"><use href="#i-keys"/></svg>Tezkor tugmalar</button>
+          </div>
+        </section>
       </div>
     </section>
   </main>
@@ -280,7 +324,7 @@
     <input type="range" class="volume" min="0" max="100" value="85">
     <button class="icon-btn fx-btn" data-act="fx-menu" title="Audio effektlar (Slowed, 8D…)"><svg class="i"><use href="#i-sparkle"/></svg></button>
     <button class="icon-btn sleep-btn" data-act="sleep" title="Uyqu taymeri"><svg class="i"><use href="#i-moon"/></svg><span class="badge"></span></button>
-    <button class="icon-btn" data-view-go="eq" title="Sozlamalar"><svg class="i"><use href="#i-eq"/></svg></button>
+    <button class="icon-btn" data-view-go="eq" data-sg="sgSound" title="Ekvalayzer va sozlamalar"><svg class="i"><use href="#i-eq"/></svg></button>
     <button class="icon-btn mini-btn desktop-only" data-act="mini" title="Mini pleyer (Ctrl+Shift+M)"><svg class="i"><use href="#i-mini"/></svg></button>
     <button class="icon-btn full-btn" data-act="open-full" title="To'liq ekran"><svg class="i"><use href="#i-expand"/></svg></button>
   </div>
@@ -293,7 +337,7 @@
   <button class="tab" data-view="library"><svg class="i"><use href="#i-note"/></svg><span>Kutubxona</span></button>
   <button class="tab" data-view="favorites"><svg class="i"><use href="#i-heart"/></svg><span>Sevimli</span></button>
   <button class="tab" data-view="queue"><svg class="i"><use href="#i-queue"/></svg><span>Navbat</span></button>
-  <button class="tab" data-view="eq"><svg class="i"><use href="#i-eq"/></svg><span>Sozlama</span></button>
+  <button class="tab" data-view="eq"><svg class="i"><use href="#i-gear"/></svg><span>Sozlama</span></button>
 </nav>
 
 <div id="fullPlayer" aria-hidden="true">

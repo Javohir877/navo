@@ -183,6 +183,34 @@ public class NavoFoldersPlugin extends Plugin {
         }
     }
 
+    /** Share sheet for a small text file (the backup): Files, Drive, Telegram… keep it. */
+    @PluginMethod
+    public void shareFile(PluginCall call) {
+        String data = call.getString("data");
+        String name = safeName(call.getString("name", "Navo.json"));
+        String mime = call.getString("mime", "application/json");
+        if (data == null) { call.reject("no data"); return; }
+        try {
+            File dir = new File(getContext().getCacheDir(), "share");
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            File f = new File(dir, name);
+            try (OutputStream os = new FileOutputStream(f)) { os.write(android.util.Base64.decode(data, android.util.Base64.DEFAULT)); }
+            Uri uri = androidx.core.content.FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", f);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType(mime);
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.putExtra(Intent.EXTRA_SUBJECT, name);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(send, "Zaxira nusxani saqlash");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("share failed");
+        }
+    }
+
     /** Opens the system share sheet (Instagram, Telegram…) with the PNG. */
     @PluginMethod
     public void shareImage(PluginCall call) {

@@ -24,12 +24,14 @@ const EQ_PRESETS = {
 const AUDIO_EXT = ['mp3','flac','wav','ogg','oga','opus','m4a','mp4','aac','webm','weba','wma','ape','wv','aiff','aif','aifc','amr','awb','3gp','mka','ac3','eac3','dts','m4b','caf','tta','mpc','au','snd','spx','mp2','mpga','dsf','dff','alac'];
 const AUDIO_SET = new Set(AUDIO_EXT);
 const LOSSLESS = new Set(['flac','wav','aiff','aif','aifc','ape','wv','alac','dsf','dff','tta']);
-const VIEW_TITLES = { home: 'Bosh sahifa', library: 'Kutubxona', top: 'Top', favorites: 'Sevimlilar', queue: 'Navbat', eq: 'Sozlamalar', stats: 'Statistika' };
+const VIEW_TITLES = { home: 'Bosh sahifa', library: 'Kutubxona', top: 'Top', favorites: 'Sevimlilar', queue: 'Navbat', eq: 'Sozlamalar', stats: 'Statistika', history: 'Tinglash tarixi' };
 const grpName = v => { try { return decodeURIComponent(String(v).slice(3)); } catch { return String(v).slice(3); } };
 const viewTitle = v => String(v).startsWith('mx:') ? ((MIX.get(String(v).slice(3)) || {}).name || 'Miks') : String(v).startsWith('ar:') ? grpName(v) : String(v).startsWith('al:') ? grpName(v).split('\u0001')[0] || 'Albom' : String(v).startsWith('pl:') ? ((PL.list.find(p => p.id === v.slice(3)) || {}).name || 'Pleylist') : (VIEW_TITLES[v] || 'Kutubxona');
 
 /* ---------- helpers ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// search text: no case, no accents, every kind of apostrophe (o' o‘ oʻ o’) the same
+const srchTxt = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[‘’ʻʼ`´]/g, "'").replace(/\s+/g, ' ').trim();
 const icon = n => `<svg class="i"><use href="#i-${n}"/></svg>`;
 const extOf = name => (String(name).split('.').pop() || '').toLowerCase();
 const baseName = name => String(name).replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
@@ -98,6 +100,7 @@ const S = {
   fx: { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
   fxStyle: 'auto',
   fade: 0,
+  norm: true,
   anim: true,
   libMode: 'songs',
   sideFilter: 'all',
@@ -118,6 +121,7 @@ function loadSettings() {
       fx: s.fx && typeof s.fx.speed === 'number' ? s.fx : { speed: 1, reverb: 0, d8: false, preset: 'Oddiy' },
       fxStyle: s.fxStyle || 'auto',
       fade: typeof s.fade === 'number' ? s.fade : 0,
+      norm: s.norm !== false,
       anim: IS_DESKTOP ? s.anim !== false : s.animPhone === true,
     });
     if (s.eq && Array.isArray(s.eq.gains) && s.eq.gains.length === EQ_FREQS.length) S.eq = s.eq;
@@ -148,6 +152,14 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.3.0': [
+    "Sozlamalar bo'limlarga ajratildi: Ovoz, Effektlar, Ko'rinish, Kutubxona, Ilova — yuqoridagi tugmalar bilan tez o'ting",
+    "Ovozni tenglashtirish: baland va past yozilgan qo'shiqlar bir xil balandlikda chalinadi",
+    "Tinglash tarixi: oxirgi tinglagan qo'shiqlaringiz, qachon eshitilgani bilan",
+    "Qidiruv endi ijrochi, albom va pleylistlarni ham topadi, katta-kichik harf va belgilarga qaramaydi",
+    "Zaxira nusxa: pleylistlar, sevimlilar va statistikani faylga saqlab, keyin tiklang",
+    "Qo'shiq menyusida «Ijrochiga o'tish» va «Albomga o'tish», saralashda «Ko'p tinglangan» va «Davomiyligi»",
+  ],
   '1.2.2': [
     "Phonk uchun yangi effektlar: Super Slowed, Ultra Slowed va Hardstyle",
     "Hardstyle: tezroq, kuchli bass va to'yingan zarbalar — ovoz baribir chegaradan oshmaydi",
@@ -222,7 +234,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.2.2';
+  return appVer || '1.3.0';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -286,7 +298,7 @@ function persist() {
       localStorage.setItem('navo.state', JSON.stringify({
         sort: S.sort, shuffle: S.shuffle, repeat: S.repeat, volume: S.volume, muted: S.muted,
         queue: S.queue, qIndex: S.qIndex, unshuffled: S.unshuffled, currentId: S.currentId,
-        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, compact: S.compact, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle, fade: S.fade, anim: IS_DESKTOP ? S.anim : true, animPhone: IS_DESKTOP ? undefined : S.anim,
+        lastTime: audio.currentTime || S.lastTime, source: S.source, eq: S.eq, lite: S.lite, compact: S.compact, viz: S.viz, bass: S.bass, netCovers: S.netCovers, fx: S.fx, fxStyle: S.fxStyle, fade: S.fade, norm: S.norm, anim: IS_DESKTOP ? S.anim : true, animPhone: IS_DESKTOP ? undefined : S.anim,
       }));
     } catch { /* storage full or blocked */ }
   }, 300);
@@ -346,7 +358,7 @@ function softClipCurve() {
   }
   return c;
 }
-let eqOut = null, wetOn = true, wetOffTimer = 0, limiter = null;
+let eqOut = null, wetOn = true, wetOffTimer = 0, limiter = null, normGain = null, loudAn = null, loudBuf = null;
 let actx = null, srcNode = null, analyser = null, preamp = null, filters = [], freqData = null, bassAn = null, bassData = null;
 
 function ensureGraph() {
@@ -399,6 +411,13 @@ function ensureGraph() {
     let out = fxMix;
     if (panner) { lfo.connect(lfoDepth).connect(panner.pan); lfo.start(); out = fxMix.connect(panner); }
     // Brick-wall limiter: dry + reverb + EQ boosts can pass 0 dB, which crackles in headphones.
+    // loudness levelling: one gain per song, set from its measured loudness (before the limiter,
+    // so a raised quiet song still cannot clip)
+    normGain = actx.createGain();
+    out = out.connect(normGain);
+    // the meter listens to the raw file (before EQ, effects and volume) so the measure belongs to the song
+    loudAn = actx.createAnalyser(); loudAn.fftSize = 2048; loudBuf = new Float32Array(loudAn.fftSize);
+    srcNode.connect(loudAn);
     limiter = actx.createDynamicsCompressor();
     limiter.threshold.value = -4; limiter.knee.value = 0; limiter.ratio.value = 20;
     limiter.attack.value = 0.002; limiter.release.value = 0.2;
@@ -418,6 +437,46 @@ function ensureGraph() {
     actx = null; analyser = null;
   }
 }
+/* ---------- loudness levelling ("Ovozni tenglashtirish") ----------
+   Every song's loudness is measured while it plays (RMS of the raw file, quiet parts skipped)
+   and remembered. From then on it starts at the right level: loud masters are turned down,
+   quiet old recordings up a little. A new song gets a gentle first guess after ~8 s. */
+// gentle on purpose: very loud masters (phonk is often about -6 dB RMS) come down a few dB, not to a whisper
+const LOUD_TARGET = -11, LOUD_MAX_UP = 4, LOUD_MAX_DOWN = -6;
+const loudM = { id: null, sum: 0, n: 0, saved: 0, applied: false };
+function normDbFor(t) {
+  if (!S.norm || !t || typeof t.loud !== 'number') return 0;
+  return Math.max(LOUD_MAX_DOWN, Math.min(LOUD_MAX_UP, LOUD_TARGET - t.loud));
+}
+function applyNorm(t, secs = 0.08) {
+  if (!normGain || !actx) return;
+  const g = Math.pow(10, normDbFor(t) / 20), now = actx.currentTime;
+  normGain.gain.cancelScheduledValues(now); normGain.gain.setValueAtTime(normGain.gain.value, now);
+  normGain.gain.linearRampToValueAtTime(g, now + Math.max(0.02, secs));
+}
+function loudSample() {
+  const t = cur();
+  if (!loudAn || !t || audio.paused || audio.seeking) return;
+  if (loudM.id !== t.id) Object.assign(loudM, { id: t.id, sum: 0, n: 0, saved: 0, applied: typeof t.loud === 'number' });
+  const vol = audio.volume;                    // the element's volume is already in this signal
+  if (vol < 0.05) return;
+  loudAn.getFloatTimeDomainData(loudBuf);
+  let ss = 0;
+  for (let i = 0; i < loudBuf.length; i++) ss += loudBuf[i] * loudBuf[i];
+  const ms = ss / loudBuf.length / (vol * vol);
+  if (ms < 3e-5) return;                       // below about -45 dB: silence / fade, not the song's level
+  loudM.sum += ms; loudM.n++;
+  if (loudM.n < 16) return;                    // ~8 s of music before trusting the number
+  const db = Math.round(10 * Math.log10(loudM.sum / loudM.n) * 10) / 10;
+  const had = typeof t.loud === 'number';
+  // a song heard before keeps a blend, so one odd listen (skipping around) cannot swing it far
+  const val = had && loudM.n < 120 ? t.loud : db;
+  if (!had || Math.abs(val - t.loud) > 0.05) t.loud = val;
+  if (!loudM.applied) { loudM.applied = true; applyNorm(t, 4); }
+  if (loudM.n - loudM.saved >= 60) { loudM.saved = loudM.n; DB.put('tracks', stripTrack(t)).catch(() => {}); }
+}
+setInterval(loudSample, 500);
+
 function applyEq() {
   if (!actx) return;
   const t = actx.currentTime;
@@ -593,6 +652,7 @@ async function loadIndex(i, autoplay = true, startAt = 0) {
   if (tok !== loadToken) return;
   if (!src) { toast('Fayl topilmadi'); return; }
   audio.src = src;
+  applyNorm(t);
   fadeIn();
   if (S.bass) prepareBeats(t);
   if (startAt > 0) audio.addEventListener('loadedmetadata', () => { try { audio.currentTime = startAt; } catch { /* */ } }, { once: true });
@@ -1546,6 +1606,8 @@ function sortedIds(ids) {
     case 'title': return ids.sort((a, b) => cmp(T(a).title, T(b).title));
     case 'artist': return ids.sort((a, b) => cmp(T(a).artist, T(b).artist) || cmp(T(a).album, T(b).album) || (T(a).trackNo || 0) - (T(b).trackNo || 0));
     case 'album': return ids.sort((a, b) => cmp(T(a).album, T(b).album) || (T(a).trackNo || 0) - (T(b).trackNo || 0) || cmp(T(a).title, T(b).title));
+    case 'plays': return ids.sort((a, b) => ((T(b).plays || 0) - (T(a).plays || 0)) || ((T(b).lastPlayed || 0) - (T(a).lastPlayed || 0)));
+    case 'dur': return ids.sort((a, b) => (T(b).duration || 0) - (T(a).duration || 0));
     default: return ids.sort((a, b) => (T(b).addedAt || 0) - (T(a).addedAt || 0));
   }
 }
@@ -1567,12 +1629,14 @@ function computeVisible() {
   else if (S.view.startsWith('pl:')) { const p = plGet(S.view.slice(3)); ids = p ? p.ids.filter(id => S.tracks.has(id)) : []; }
   else if (S.view.startsWith('mx:')) { const m = MIX.get(S.view.slice(3)); ids = m ? m.ids.filter(id => S.tracks.has(id)) : []; }
   else if (S.view === 'home') ids = [];
+  else if (S.view === 'history') ids = S.order.filter(id => S.tracks.get(id).lastPlayed).sort((a, b) => S.tracks.get(b).lastPlayed - S.tracks.get(a).lastPlayed).slice(0, 300);
   else if (S.view.startsWith('ar:')) { const n = grpName(S.view); ids = sortedIds(S.order.filter(id => artistOf(S.tracks.get(id)) === n)); }
   else if (S.view.startsWith('al:')) { const k = grpName(S.view); const T = id => S.tracks.get(id);
     ids = S.order.filter(id => albumKey(T(id)) === k).sort((a, b) => ((T(a).trackNo || 999) - (T(b).trackNo || 999)) || String(T(a).title).localeCompare(String(T(b).title))); }
   else ids = sortedIds(S.order.slice());
-  const q = S.query.trim().toLowerCase();
-  if (q) ids = ids.filter(id => { const t = S.tracks.get(id); return `${t.title} ${t.artist} ${t.album}`.toLowerCase().includes(q); });
+  // search ignores case and accents, so "oybek" also finds "Oybék" and "o‘" / "o'" match
+  const q = srchTxt(S.query);
+  if (q) ids = ids.filter(id => { const t = S.tracks.get(id); return srchTxt(`${t.title} ${t.artist} ${t.album}`).includes(q); });
   return ids;
 }
 // Real cover thumbnail, or a colourful generated one (cached per colour) for songs without a picture.
@@ -1585,15 +1649,30 @@ function thumbFor(t) {
   return phCache.get(k);
 }
 const thumbDiv = t => `<div class="thumb" style="background-image:url('${thumbFor(t)}')"></div>`;
+function agoText(ms) {
+  const d = (Date.now() - ms) / 1000;
+  if (d < 90) return 'hozirgina';
+  if (d < 3600) return Math.round(d / 60) + ' daqiqa oldin';
+  if (d < 86400) return Math.round(d / 3600) + ' soat oldin';
+  if (d < 2 * 86400) return 'kecha';
+  if (d < 7 * 86400) return Math.floor(d / 86400) + ' kun oldin';
+  const x = new Date(ms);
+  return `${x.getDate()}.${String(x.getMonth() + 1).padStart(2, '0')}.${x.getFullYear()}`;
+}
 function rowHTML(t, i) {
+  const top = S.view === 'top';
+  if (S.view === 'history') return rowHTMLWith(t, i, `<div><span class="plays ago">${agoText(t.lastPlayed)}</span></div>`);
+  return rowHTMLWith(t, i, null);
+}
+function rowHTMLWith(t, i, col5) {
   const top = S.view === 'top';
   return `<div class="row" data-id="${esc(t.id)}" data-i="${i}"${i < 16 ? ` style="--d:${i}"` : ''}>` +
     `<div class="num${top ? ' rank' + (i < 3 ? ' r' + (i + 1) : '') : ''}">${i + 1}</div>` +
     thumbDiv(t) +
     `<div class="meta"><div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist || 'Noma\'lum ijrochi')}</div></div>` +
     `<div class="alb">${esc(t.album || '—')}</div>` +
-    (top ? `<div><span class="plays">${t.plays} marta</span></div>`
-         : `<div><span class="chip${LOSSLESS.has(t.ext) ? ' hq' : ''}">${esc((t.ext || '?').toUpperCase())}</span></div>`) +
+    (col5 || (top ? `<div><span class="plays">${t.plays} marta</span></div>`
+         : `<div><span class="chip${LOSSLESS.has(t.ext) ? ' hq' : ''}">${esc((t.ext || '?').toUpperCase())}</span></div>`)) +
     `<div class="dur">${t.duration ? fmtTime(t.duration) : '--:--'}</div>` +
     `<div class="acts"><button class="icon-btn sm fav${t.fav ? ' on' : ''}" data-a="fav" title="Sevimli">${icon(t.fav ? 'heart-fill' : 'heart')}</button>` +
     `<button class="icon-btn sm" data-a="more" title="Ko'proq">${icon('more')}</button></div></div>`;
@@ -1618,7 +1697,8 @@ function renderList() {
 
   const list = $('#trackList'), empty = $('#empty');
   renderTopHero(ids);
-  $('.list-head span:nth-child(5)').textContent = S.view === 'top' ? 'Tinglangan' : 'Format';
+  const col5 = S.view === 'top' ? 'Tinglangan' : S.view === 'history' ? 'Qachon' : 'Format';
+  $('.list-head span:nth-child(5)').textContent = col5;
   if (S.view === 'home') {
     empty.classList.add('hidden'); list.classList.remove('hidden'); $('.list-head').classList.add('hidden');
     list.classList.remove('queue-mode');
@@ -1651,6 +1731,11 @@ function renderList() {
     markPlaying();
     return;
   }
+  if (!ids.length && S.query.trim() && S.view === 'library' && searchGroupsHTML()) {
+    empty.classList.add('hidden'); list.classList.remove('hidden'); $('.list-head').classList.add('hidden');
+    list.innerHTML = searchGroupsHTML();
+    return;
+  }
   if (!ids.length) {
     list.innerHTML = '';
     list.classList.add('hidden');
@@ -1662,6 +1747,7 @@ function renderList() {
       : S.view === 'top' ? ['Top hali bo\'sh', 'Qo\'shiqlarni tinglang — 30 soniyadan ko\'p eshitilgan har bir qo\'shiq hisoblanadi va eng ko\'p tinglanganlar shu yerda chiqadi.', false]
       : S.view === 'favorites' ? ['Sevimlilar bo\'sh', 'Yoqqan qo\'shiqlaringizdagi yurakcha tugmasini bosing — ular shu yerda paydo bo\'ladi.', false]
       : S.view === 'queue' ? ['Navbat bo\'sh', 'Kutubxonadan biror qo\'shiqni ijro eting.', false]
+      : S.view === 'history' ? ['Tarix hali bo\'sh', 'Qo\'shiq tinglang — har bir eshitilgan qo\'shiq vaqti bilan shu yerda saqlanadi.', false]
       : ['Kutubxona bo\'sh', IS_DESKTOP ? 'Fayl yoki butun papkani qo\'shing, yoki ularni oynaga sudrab tashlang. MP3, FLAC, WAV, M4A, OGG, WMA, APE va boshqalar.' : 'Telefoningizdagi musiqa fayllarini tanlang — MP3, FLAC, WAV, M4A, OGG, OPUS va boshqalar.', true];
     $('#emptyTitle').textContent = title;
     $('#emptyText').textContent = text;
@@ -1671,8 +1757,8 @@ function renderList() {
   empty.classList.add('hidden');
   list.classList.remove('hidden');
   $('.list-head').classList.add('hidden');      // the header now lives inside the list (sticky)
-  const head = `<div class="list-head in"><span>#</span><span></span><span>Nomi</span><span>Albom</span><span>${S.view === 'top' ? 'Tinglangan' : 'Format'}</span><span class="r">Vaqt</span><span></span></div>`;
-  list.innerHTML = nowCardHTML() + heroNowHTML() + (S.view === 'library' && !S.query.trim() ? libTabsHTML() : '') + carouselsHTML() + head + ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('');
+  const head = `<div class="list-head in"><span>#</span><span></span><span>Nomi</span><span>Albom</span><span>${col5}</span><span class="r">Vaqt</span><span></span></div>`;
+  list.innerHTML = nowCardHTML() + heroNowHTML() + (S.view === 'library' && !S.query.trim() ? libTabsHTML() : '') + searchGroupsHTML() + head + ids.map((id, i) => rowHTML(S.tracks.get(id), i)).join('');
   markPlaying();
 }
 /* ---------- library carousels: "Siz uchun" + "Yaqinda qo'shilgan" ---------- */
@@ -1681,28 +1767,22 @@ function greeting() {
   const h = new Date().getHours();
   return h < 5 ? 'Xayrli tun' : h < 12 ? 'Xayrli tong' : h < 18 ? 'Xayrli kun' : 'Xayrli kech';
 }
-function carouselsHTML() {
-  return '';
-  if (S.view !== 'library' || S.query.trim()) return '';
-  if (S.order.length < 4) return plShelfHTML();
+/* search in the library also finds artists, albums and playlists by name */
+function searchGroupsHTML() {
+  const q = srchTxt(S.query);
+  if (S.view !== 'library' || q.length < 2) return '';
+  const hit = name => srchTxt(name).includes(q);
+  const ars = groupArtists().filter(g => hit(g.name)).slice(0, 8);
+  const als = groupAlbums().filter(g => hit(g.name)).slice(0, 8);
+  const pls = PL.list.filter(p => hit(p.name)).slice(0, 6);
+  if (!ars.length && !als.length && !pls.length) return '';
+  const chip = (view, img, title, sub, round) => `<button class="sr-chip" data-view="${esc(view)}"><span class="sr-art${round ? ' round' : ''}" style="background-image:url('${img}')"></span><span class="sr-t"><b>${esc(title)}</b><small>${esc(sub)}</small></span></button>`;
   const T = id => S.tracks.get(id);
-  const recent = S.order.slice().sort((a, b) => (T(b).addedAt || 0) - (T(a).addedAt || 0)).slice(0, 14);
-  const top = S.order.filter(id => (T(id).plays || 0) > 0)
-    .sort((a, b) => (T(b).plays - T(a).plays) || ((T(b).lastPlayed || 0) - (T(a).lastPlayed || 0))).slice(0, 14);
-  carouselSets.top = top; carouselSets.recent = recent;
-  const section = (key, title, sub, ids) => ids.length < 3 ? '' :
-    `<section class="shelf"><div class="shelf-head"><div><h3>${title}</h3><small>${sub}</small></div>` +
-    `<div class="shelf-nav"><button class="round-btn sm" data-shelf="${key}" data-dir="-1">${icon('prev')}</button>` +
-    `<button class="round-btn sm" data-shelf="${key}" data-dir="1">${icon('next')}</button></div></div>` +
-    `<div class="shelf-row" data-row="${key}">` + ids.map((id, i) => {
-      const t = T(id);
-      return `<div class="card" data-sec="${key}" data-i="${i}" data-cid="${esc(id)}">` +
-        `<div class="card-art" style="background-image:url('${thumbFor(t)}')"><span class="card-play">${icon('play')}</span></div>` +
-        `<div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist || 'Noma\'lum ijrochi')}</div></div>`;
-    }).join('') + `</div></section>`;
-  return `<div class="greet">${greeting()}</div>` + plShelfHTML() +
-    section('top', 'Siz uchun', 'Eng ko\'p tinglaganlaringiz', top) +
-    section('recent', 'Yaqinda qo\'shilgan', 'Yangi qo\'shiqlaringiz', recent);
+  return `<div class="sr-groups">` +
+    pls.map(p => chip('pl:' + p.id, p.ids.length && T(p.ids[0]) ? thumbFor(T(p.ids[0])) : placeholderArt({ title: p.name, artist: '' }), p.name, `Pleylist · ${p.ids.length} ta`, false)).join('') +
+    ars.map(g => chip('ar:' + encodeURIComponent(g.name), thumbFor(T(g.ids[0])), g.name, `Ijrochi · ${g.ids.length} ta`, true)).join('') +
+    als.map(g => chip('al:' + encodeURIComponent(g.key), thumbFor(T(g.ids[0])), g.name, `Albom · ${g.artist || ''}`, false)).join('') +
+    `</div>`;
 }
 
 let heroToken = 0;
@@ -1769,7 +1849,7 @@ audio.addEventListener('timeupdate', () => {
     t.plays = (t.plays || 0) + 1;
     t.lastPlayed = Date.now();
     dirty = true;
-    if (S.view === 'top') renderList();
+    if (S.view === 'top' || S.view === 'history') renderList();
   }
   if (dirty || listen.secs - listen.saved > 15) { listen.saved = listen.secs; DB.put('tracks', stripTrack(t)).catch(() => {}); }
 });
@@ -2560,6 +2640,8 @@ function openMenu(id, x, y) {
     `<button data-m="pl">${icon('playlist')}Pleylistga qo'shish</button>` +
     (S.view.startsWith('pl:') ? `<button data-m="plrm">${icon('trash')}Pleylistdan olib tashlash</button>` : '') +
     `<button data-m="fav">${icon(t.fav ? 'heart-fill' : 'heart')}${t.fav ? 'Sevimlilardan olib tashlash' : 'Sevimlilarga qo\'shish'}</button>` +
+    `<button data-m="artist">${icon('user')}Ijrochiga o'tish</button>` +
+    (t.album ? `<button data-m="album">${icon('disc')}Albomga o'tish</button>` : '') +
     `<button data-m="edit">${icon('edit')}Nomi va rasmini o'zgartirish</button>` +
     (IS_DESKTOP ? `<button data-m="reveal">${icon('open')}Papkada ko'rsatish</button>` : '') +
     `<hr><button data-m="remove" class="danger">${icon('trash')}Kutubxonadan o'chirish</button>`;
@@ -2584,6 +2666,8 @@ function openMenu(id, x, y) {
     else if (a === 'plrm') plRemove(S.view.slice(3), id);
     else if (a === 'fav') toggleFav(id);
     else if (a === 'edit') openEdit(id);
+    else if (a === 'artist') { closeFull(); setView('ar:' + encodeURIComponent(artistOf(t))); }
+    else if (a === 'album') { closeFull(); setView('al:' + encodeURIComponent(albumKey(t))); }
     else if (a === 'reveal') NAVO.showInFolder(t.path);
     else if (a === 'remove') removeTrack(id);
   };
@@ -2959,7 +3043,7 @@ function sleepFade(ms) {
 }
 
 /* ---------- sort menu (in-app, instead of a browser <select>) ---------- */
-const SORTS = [['added', "Yangi qo'shilgan"], ['title', 'Nomi bo\'yicha'], ['artist', 'Ijrochi bo\'yicha'], ['album', 'Albom bo\'yicha']];
+const SORTS = [['added', "Yangi qo'shilgan"], ['title', 'Nomi bo\'yicha'], ['artist', 'Ijrochi bo\'yicha'], ['album', 'Albom bo\'yicha'], ['plays', 'Ko\'p tinglangan'], ['dur', 'Davomiyligi']];
 // y > 0: menu opens below that point; y < 0: menu opens ABOVE the point -y
 function showMenu(html, x, y, onPick) {
   closeMenu();
@@ -3265,6 +3349,121 @@ function syncEq() {
   });
 }
 
+/* ---------- settings: section tabs that follow the scroll ---------- */
+function setGroup(id, smooth = true) {
+  const box = $('#setScroll'), g = $('#' + id);
+  if (!box || !g) return;
+  box.scrollTo({ top: Math.max(0, g.offsetTop - box.offsetTop - 4), behavior: smooth && motionOK() ? 'smooth' : 'auto' });
+  markGroup(id);
+}
+function markGroup(id) {
+  $$('#setTabs [data-sg]').forEach(b => b.classList.toggle('on', b.dataset.sg === id));
+  const on = $(`#setTabs [data-sg="${id}"]`);
+  if (on && on.scrollIntoView) { const nav = $('#setTabs'); nav.scrollTo({ left: on.offsetLeft - nav.clientWidth / 2 + on.offsetWidth / 2, behavior: 'smooth' }); }
+}
+function initSetTabs() {
+  $('#setTabs').addEventListener('click', e => { const b = e.target.closest('[data-sg]'); if (b) setGroup(b.dataset.sg); });
+  const box = $('#setScroll');
+  let raf = 0;
+  box.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const y = box.scrollTop + 80, groups = $$('.set-group', box);
+      let cur = groups[0];
+      for (const g of groups) if (g.offsetTop - box.offsetTop <= y) cur = g;
+      if (box.scrollTop + box.clientHeight >= box.scrollHeight - 4) cur = groups[groups.length - 1];
+      if (cur && !$(`#setTabs [data-sg="${cur.id}"]`).classList.contains('on')) markGroup(cur.id);
+    });
+  }, { passive: true });
+}
+
+/* ---------- backup: everything you made in Navo, in one small file (not the music itself) ---------- */
+const BACKUP_KEYS = ['navo.state', 'navo.playlists', 'navo.daily', 'navo.watch'];
+async function makeBackup() {
+  const tracks = S.order.map(id => S.tracks.get(id)).filter(Boolean).map(t => ({
+    id: t.id, file: t.path ? baseName(t.path) : (t.name || ''), title: t.title, artist: t.artist, album: t.album,
+    fav: !!t.fav, plays: t.plays || 0, listened: Math.round(t.listened || 0), lastPlayed: t.lastPlayed || 0, loud: t.loud,
+  }));
+  const lyrics = {};
+  try { for (const k of await DB.allKeys('lyrics')) { const v = await DB.get('lyrics', k); if (v && v.src === 'Siz') lyrics[k] = v; } } catch { /* */ }
+  const ls = {};
+  for (const k of BACKUP_KEYS) { try { const v = localStorage.getItem(k); if (v != null) ls[k] = v; } catch { /* */ } }
+  const data = { app: 'Navo', kind: 'backup', v: 1, ver: await getAppVersion(), at: new Date().toISOString(), tracks, lyrics, ls };
+  const text = JSON.stringify(data);
+  const name = `Navo-zaxira-${dayKey()}.json`;
+  try {
+    if (IS_DESKTOP && NAVO.saveFile) { const r = await NAVO.saveFile(name, text); if (r) toast('Zaxira nusxa saqlandi ✓'); return; }
+    if (NativeFolders && NativeFolders.shareFile) {
+      await NativeFolders.shareFile({ data: btoa(unescape(encodeURIComponent(text))), name, mime: 'application/json' });
+      toast('Faylni Yuklanmalar yoki Drive\'ga saqlang ✓');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('Zaxira nusxa saqlandi ✓');
+  } catch (e) { console.warn(e); toast('Zaxira nusxani saqlab bo\'lmadi'); }
+}
+async function loadBackup(file) {
+  let d;
+  try { d = JSON.parse(await file.text()); } catch { toast('Bu fayl Navo zaxira nusxasi emas'); return; }
+  if (!d || d.kind !== 'backup' || !Array.isArray(d.tracks)) { toast('Bu fayl Navo zaxira nusxasi emas'); return; }
+  // songs are matched by their id (file name + size + date), then by file name, then by title + artist
+  const byFile = new Map(), byTa = new Map();
+  for (const id of S.order) {
+    const t = S.tracks.get(id);
+    const f = t.path ? baseName(t.path) : (t.name || '');
+    if (f) byFile.set(f.toLowerCase(), t);
+    byTa.set(`${t.title}|${t.artist}`.toLowerCase(), t);
+  }
+  const idMap = new Map();
+  let hit = 0;
+  for (const b of d.tracks) {
+    const t = S.tracks.get(b.id) || (b.file && byFile.get(String(b.file).toLowerCase())) || byTa.get(`${b.title}|${b.artist}`.toLowerCase());
+    if (!t) continue;
+    hit++; idMap.set(b.id, t.id);
+    if (b.title) t.title = b.title;
+    if (typeof b.artist === 'string') t.artist = b.artist;
+    if (typeof b.album === 'string') t.album = b.album;
+    t.fav = t.fav || !!b.fav;
+    t.plays = Math.max(t.plays || 0, b.plays || 0);
+    t.listened = Math.max(t.listened || 0, b.listened || 0);
+    t.lastPlayed = Math.max(t.lastPlayed || 0, b.lastPlayed || 0) || undefined;
+    if (typeof b.loud === 'number' && typeof t.loud !== 'number') t.loud = b.loud;
+    try { await DB.put('tracks', stripTrack(t)); } catch { /* */ }
+  }
+  for (const [k, v] of Object.entries(d.lyrics || {})) { const id = idMap.get(k) || k; if (S.tracks.has(id)) { try { await DB.put('lyrics', v, id); } catch { /* */ } } }
+  const ls = d.ls || {};
+  try {
+    if (ls['navo.playlists']) {
+      const incoming = JSON.parse(ls['navo.playlists']) || [];
+      for (const p of incoming) {
+        if (!p || !p.id || !Array.isArray(p.ids)) continue;
+        const ids = [...new Set(p.ids.map(id => idMap.get(id) || id))];
+        const have = PL.list.find(x => x.id === p.id);
+        if (have) have.ids = [...new Set([...have.ids, ...ids])]; else PL.list.push({ ...p, ids });
+      }
+      localStorage.setItem('navo.playlists', JSON.stringify(PL.list));
+    }
+    if (ls['navo.daily']) {
+      const inc = JSON.parse(ls['navo.daily']) || {};
+      for (const [k, v] of Object.entries(inc)) DAILY.map[k] = Math.max(DAILY.map[k] || 0, +v || 0);
+      localStorage.setItem('navo.daily', JSON.stringify(DAILY.map));
+    }
+    if (ls['navo.state']) {
+      const st = JSON.parse(ls['navo.state']) || {};
+      // settings only; the queue and position stay as they are on this device
+      for (const k of ['queue', 'qIndex', 'unshuffled', 'currentId', 'lastTime', 'source', 'compact']) delete st[k];
+      const mine = JSON.parse(localStorage.getItem('navo.state') || '{}');
+      localStorage.setItem('navo.state', JSON.stringify({ ...mine, ...st }));
+    }
+  } catch (e) { console.warn(e); }
+  toast(`Tiklandi: ${hit} ta qo'shiq, ${PL.list.length} ta pleylist ✓`, true);
+  setTimeout(() => location.reload(), 1600);
+}
+
 /* ============================================================
    Events
    ============================================================ */
@@ -3273,7 +3472,7 @@ function bind() {
     const viewBtn = e.target.closest('[data-view]'), actIn = e.target.closest('[data-act]');
     if (viewBtn && !(actIn && viewBtn.contains(actIn))) { setView(viewBtn.dataset.view); return; }
     const go = e.target.closest('[data-view-go]');
-    if (go) { closeFull(); setView(go.dataset.viewGo); return; }
+    if (go) { closeFull(); setView(go.dataset.viewGo); if (go.dataset.sg) setGroup(go.dataset.sg, false); return; }
     const actEl = e.target.closest('[data-act]');
     if (!actEl) return;
     const act = actEl.dataset.act;
@@ -3386,6 +3585,12 @@ function bind() {
   $('#shareModal').addEventListener('pointerdown', e => { if (e.target.id === 'shareModal') closeShare(); });
   applyAnim();
   $('#animOn').addEventListener('change', e => { S.anim = e.target.checked; applyAnim(); persist(); toast(S.anim ? 'Animatsiyalar yoqildi ✨' : 'Animatsiyalar o\'chirildi'); });
+  $('#normOn').checked = S.norm;
+  $('#normOn').addEventListener('change', e => { S.norm = e.target.checked; applyNorm(cur(), 0.6); persist(); toast(S.norm ? 'Ovoz tenglashtirish yoqildi ✓' : 'Ovoz tenglashtirish o\'chirildi'); });
+  initSetTabs();
+  $('#backupMake').addEventListener('click', makeBackup);
+  $('#backupLoad').addEventListener('click', () => { const i = $('#backupInput'); i.value = ''; i.click(); });
+  $('#backupInput').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadBackup(f); });
   const syncFade = () => { const r = $('#fadeSecs'); r.value = S.fade; setFill(r); $('#fadeOut').textContent = S.fade ? S.fade + ' s' : "O'chiq"; };
   syncFade();
   $('#fadeSecs').addEventListener('input', e => { S.fade = +e.target.value; syncFade(); if (!S.fade) fadeTo(1, 0.2); persist(); });
@@ -3514,11 +3719,11 @@ function bind() {
     else if (e.key === 'ArrowUp') { e.preventDefault(); S.volume = Math.min(1, S.volume + 0.05); S.muted = false; applyVolume(); persist(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); S.volume = Math.max(0, S.volume - 0.05); applyVolume(); persist(); }
     else if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.metaKey) { S.muted = !S.muted; applyVolume(); persist(); }
-    else if (e.key.toLowerCase() === 'f' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#search').focus(); }
+    else if ((e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'k') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (['eq', 'stats'].includes(S.view)) setView('library'); $('#search').focus(); $('#search').select(); }
     else if (e.key.toLowerCase() === 'b' && (e.ctrlKey || e.metaKey) && IS_DESKTOP) { e.preventDefault(); setCompact(!S.compact); }
     else if (e.key.toLowerCase() === 'm' && (e.ctrlKey || e.metaKey) && e.shiftKey && IS_DESKTOP) { e.preventDefault(); setMini(!miniOn); }
     else if (e.key === '?' && IS_DESKTOP) { $('#keysModal').classList.contains('hidden') ? openKeys() : closeKeys(); }
-    else if (e.key === 'Escape') { if (!$('#editModal').classList.contains('hidden')) closeEdit(); else if (!$('#keysModal').classList.contains('hidden')) closeKeys(); else if (!$('#newsModal').classList.contains('hidden')) $('#newsModal').classList.add('hidden'); else if (miniOn) setMini(false); else { closeMenu(); closeFull(); } }
+    else if (e.key === 'Escape') { if (!$('#shareModal').classList.contains('hidden')) closeShare(); else if (!$('#plModal').classList.contains('hidden')) $('#plCancel').click(); else if (!$('#editModal').classList.contains('hidden')) closeEdit(); else if (!$('#keysModal').classList.contains('hidden')) closeKeys(); else if (!$('#newsModal').classList.contains('hidden')) $('#newsModal').classList.add('hidden'); else if (miniOn) setMini(false); else { closeMenu(); closeFull(); } }
     else if (e.key.toLowerCase() === 'l' && S.currentId) { if (!$('#fullPlayer').classList.contains('open')) openFull(); toggleLyrics(); }
   });
 
@@ -3665,6 +3870,6 @@ async function boot() {
 }
 
 // hooks for the automated checks in electron/main.js (test runs only)
-if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, toast, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ fade: fadeGain ? fadeGain.gain.value : null, outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
+if (IS_DESKTOP && NAVO.devTest) window.__navo = { showUpdateCard, setMini, coverCandidates, fetchLyrics, findCoverOnline, openEdit, closeEdit, loadIndex, openFull, toggleLyrics, openLyEdit, S, setFxPreset, toast, W, syncWatch, renderWatch, saveWatch, audioDbg: () => ({ raw: loudAn ? (loudAn.getFloatTimeDomainData(loudBuf), +(10 * Math.log10(loudBuf.reduce((s, x) => s + x * x, 0) / loudBuf.length + 1e-12)).toFixed(1)) : null, ng: normGain ? +normGain.gain.value.toFixed(3) : null, fade: fadeGain ? fadeGain.gain.value : null, outClip, lite: LITE_AUDIO, wetOn, red: limiter ? limiter.reduction : null, state: actx && actx.state, an: analyser }) };
 boot().then(() => showNewsIfUpdated()).catch(() => {});
 })();

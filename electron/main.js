@@ -328,6 +328,16 @@ ipcMain.handle('save-image', async (_e, dataUrl, name) => {
   shell.showItemInFolder(r.filePath);
   return r.filePath;
 });
+// backup file (JSON text only; the user picks where it goes)
+ipcMain.handle('save-file', async (_e, name, text) => {
+  if (typeof text !== 'string' || text.length > 50e6) return null;
+  const safe = String(name || 'Navo.json').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'Navo.json';
+  const r = await dialog.showSaveDialog(win, { title: 'Zaxira nusxani saqlash', defaultPath: path.join(app.getPath('documents'), safe), filters: [{ name: 'Navo zaxira', extensions: ['json'] }] });
+  if (r.canceled || !r.filePath) return null;
+  await fsp.writeFile(r.filePath, text, 'utf8');
+  shell.showItemInFolder(r.filePath);
+  return r.filePath;
+});
 ipcMain.handle('gpu-info', () => {
   const st = app.getGPUFeatureStatus();
   return { accelerated: String(st.gpu_compositing || '').startsWith('enabled'), status: st };
@@ -606,6 +616,22 @@ async function devScreenshots() {
     await js(`document.querySelector('[data-act=close-full]').click()`);
     await wait(15000); report('later');
     console.log('HEAP', await js('(() => { const m = performance.memory; return Math.round(m.usedJSHeapSize/1048576) + "MB used / " + Math.round(m.totalJSHeapSize/1048576) + "MB total; imgs=" + document.images.length + " layers fx=" + document.querySelectorAll("#fxLayer *, #fpFxLayer *").length; })()'));
+    app.quit(); return;
+  }
+  if (process.env.NAVO_STEPS) {
+    // generic scripted check: a JSON list of { js, wait, shot, log } steps
+    win.setSize(+process.env.NAVO_W || 1440, +process.env.NAVO_H || 900);
+    if (process.env.NAVO_DIR) {
+      const dir = process.env.NAVO_DIR;
+      win.webContents.send('open-paths', fs.readdirSync(dir).filter(f => /[.](m4a|mp3|flac)$/i.test(f)).map(f => path.join(dir, f)));
+      await wait(9000);
+    }
+    await js(`document.querySelector('#newsOk') && document.querySelector('#newsOk').click()`);
+    for (const st of JSON.parse(fs.readFileSync(process.env.NAVO_STEPS, 'utf8'))) {
+      if (st.js) { const r = await js(st.js); if (st.log) console.log('STEP', st.log, typeof r === 'string' ? r : JSON.stringify(r)); }
+      if (st.wait) await wait(st.wait);
+      if (st.shot) await shot(st.shot);
+    }
     app.quit(); return;
   }
   if (process.env.NAVO_POLISH) {
