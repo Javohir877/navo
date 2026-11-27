@@ -152,6 +152,12 @@ async function setMini(on) {
 function openOutside(url) { location.href = url; }
 const RELEASES = 'https://github.com/Javohir877/navo/releases/latest/download/';
 const NEWS = {
+  '1.3.1': [
+    "Telefonda qo'shiqni tahrirlash oynasi pastdan chiqadigan qulay panelga aylandi",
+    "Rasm tanlash: katta Galereya, Internet va O'chirish tugmalari, muqovalar katta to'rda",
+    "Tugmalar yangilandi: yengil yaltiroq va me'yorida rangli shu'la",
+    "Vizualizator silliq to'lqinga aylandi: yumaloq, tiniq chiziqlar, telefonda ham xira emas",
+  ],
   '1.3.0': [
     "Sozlamalar bo'limlarga ajratildi: Ovoz, Effektlar, Ko'rinish, Kutubxona, Ilova — yuqoridagi tugmalar bilan tez o'ting",
     "Ovozni tenglashtirish: baland va past yozilgan qo'shiqlar bir xil balandlikda chalinadi",
@@ -234,7 +240,7 @@ async function getAppVersion() {
     if (IS_DESKTOP) appVer = await NAVO.appVersion();
     else { const A = window.capacitorApp && window.capacitorApp.App; if (A) appVer = (await A.getInfo()).version; }
   } catch { /* */ }
-  return appVer || '1.3.0';
+  return appVer || '1.3.1';
 }
 function updateUrl() {
   if (!IS_DESKTOP) return RELEASES + 'Navo.apk';
@@ -1554,45 +1560,59 @@ function tick(ts) {
   requestAnimationFrame(tick);
 }
 let vizDt = 16;
+const vizRaw = new Float32Array(512);
 function drawViz(cv, ts) {
-  const kUp = lerpK(vizDt, 28), kDown = lerpK(vizDt, 140);
-  const dpr = PHONE_FX ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
+  const kUp = lerpK(vizDt, 42), kDown = lerpK(vizDt, 170);
+  // full device resolution so the bars stay sharp on phones and HiDPI screens (one fill per frame, cheap)
+  const dpr = Math.min(PHONE_FX ? 2 : 2.5, window.devicePixelRatio || 1);
   const w = cv.clientWidth, h = cv.clientHeight;
   if (!w || !h) return false;
-  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const W = Math.round(w * dpr), H = Math.round(h * dpr);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   const g = cv.getContext('2d');
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, w, h);
-  const barW = cv.id === 'fpViz' ? 4 : 3.2, gap = cv.id === 'fpViz' ? 3.5 : 2.6;
-  const n = Math.max(8, Math.floor((w + gap) / (barW + gap)));
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, W, H);
+  // bar and gap in whole device pixels: no half-pixel edges, no blur
+  const big = cv.id === 'fpViz';
+  const bw = Math.max(2, Math.round((big ? 4 : 3) * dpr)), gp = Math.max(2, Math.round((big ? 3.5 : 2.6) * dpr));
+  const n = Math.max(8, Math.min(vizRaw.length, Math.floor((W + gp) / (bw + gp))));
+  const x0 = Math.floor((W - (n * (bw + gp) - gp)) / 2);
   let st = vizState.get(cv);
   if (!st || st.length !== n) { st = new Float32Array(n); vizState.set(cv, st); }
-  const bins = freqData ? freqData.length * 0.72 : 0;
-  let moving = false;
-  const grad = g.createLinearGradient(0, 0, w, 0);
-  grad.addColorStop(0, vizColors[0]);
-  grad.addColorStop(0.5, vizColors[1]);
-  grad.addColorStop(1, vizColors[2]);
-  g.fillStyle = grad;
-  g.beginPath();
-  const mid = h / 2;
+  const bins = freqData ? freqData.length * 0.62 : 0;
+  const live = analyser && S.playing;
   for (let k = 0; k < n; k++) {
-    let v;
-    if (analyser && S.playing) {
-      const a = Math.floor(Math.pow(k / n, 1.6) * bins) + 1;
-      const bEnd = Math.max(a + 1, Math.floor(Math.pow((k + 1) / n, 1.6) * bins) + 1);
-      let s = 0; for (let j = a; j < bEnd; j++) s += freqData[j]; v = s / ((bEnd - a) * 255);
-      v = Math.pow(v, 1.4) * (0.75 + k / n * 0.6);
-    } else if (S.playing) {
-      v = 0.25 + 0.2 * Math.sin(ts / 300 + k * 0.5) * Math.sin(ts / 900 + k * 0.17);
-    } else v = 0;
+    let v = 0;
+    if (live) {
+      const a = Math.floor(Math.pow(k / n, 1.7) * bins) + 1;
+      const bEnd = Math.max(a + 1, Math.floor(Math.pow((k + 1) / n, 1.7) * bins) + 1);
+      let sum = 0; for (let j = a; j < bEnd; j++) sum += freqData[j];
+      v = sum / ((bEnd - a) * 255);
+      // tilt: bass is naturally loudest, so lift the highs and calm the lows
+      v = Math.pow(v, 2) * (0.55 + (k / n) * 1.1);
+    } else if (S.playing) v = 0.22 + 0.16 * Math.sin(ts / 320 + k * 0.42) * Math.sin(ts / 950 + k * 0.13);
+    vizRaw[k] = v;
+  }
+  const grad = g.createLinearGradient(x0, 0, W - x0, 0);
+  grad.addColorStop(0, vizColors[0]); grad.addColorStop(0.5, vizColors[1]); grad.addColorStop(1, vizColors[2]);
+  g.fillStyle = grad;
+  if (!PHONE_FX && S.anim !== false) { g.shadowColor = vizColors[1]; g.shadowBlur = 6 * dpr; }   // a soft glow, desktop only
+  g.beginPath();
+  const mid = H / 2, rr = bw / 2, minH = bw, rounded = typeof g.roundRect === 'function';
+  let moving = false;
+  for (let k = 0; k < n; k++) {
+    // neighbours blend in: the outline reads as one smooth wave instead of a jagged comb
+    const v0 = vizRaw[Math.max(0, k - 1)], v2 = vizRaw[Math.min(n - 1, k + 1)];
+    let v = vizRaw[k] * 0.5 + (v0 + v2) * 0.25;
+    v = (1 - Math.exp(-1.7 * v)) / 0.817;          // soft ceiling: loud parts never slam flat against the top
     st[k] += (v - st[k]) * (v > st[k] ? kUp : kDown);
     if (st[k] > 0.004) moving = true;
-    const bh = Math.max(2, st[k] * h * 0.95);
-    // all bars go into ONE path -> a single fill call per frame
-    g.rect(k * (barW + gap), mid - bh / 2, barW, bh);
+    const bh = Math.max(minH, Math.round(st[k] * H * 0.94 / 2) * 2);
+    const x = x0 + k * (bw + gp), y = Math.round(mid - bh / 2);
+    if (rounded) g.roundRect(x, y, bw, bh, rr); else g.rect(x, y, bw, bh);
   }
   g.fill();
+  g.shadowBlur = 0;
   return moving;
 }
 
@@ -3649,7 +3669,9 @@ function bind() {
   $('#bassOn').addEventListener('change', e => { S.bass = e.target.checked; if (S.bass && cur() && beatFor !== S.currentId) prepareBeats(cur()); startLoop(); persist(); });
 
   // edit dialog
-  $('#editPickArt').addEventListener('click', () => { const i = $('#artInput'); i.value = ''; i.click(); });
+  const pickArt = () => { const i = $('#artInput'); i.value = ''; i.click(); };
+  $('#editPickArt').addEventListener('click', pickArt);
+  $('#editCam').addEventListener('click', pickArt);
   $('#artInput').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) setEditArtFile(f); });
   $('#editFindArt').addEventListener('click', () => openCoverPick());
   $('#coverGoogle').addEventListener('click', () => {

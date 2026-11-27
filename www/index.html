@@ -404,15 +404,16 @@
 <div id="edgeGlow"><i class="eg t"></i><i class="eg b"></i><i class="eg l"></i><i class="eg r"></i></div>
 
 <div id="editModal" class="modal hidden">
-  <div class="modal-card glass">
+  <div class="modal-card glass edit-card">
+    <span class="sheet-grip" aria-hidden="true"></span>
     <h3>Qo'shiqni tahrirlash</h3>
     <div class="edit-grid">
       <div class="edit-art">
-        <img id="editArt" alt="">
+        <div class="edit-cover"><img id="editArt" alt=""><button class="edit-cam" id="editCam" title="Rasm tanlash"><svg class="i"><use href="#i-image"/></svg></button></div>
         <div class="edit-art-btns">
-          <button class="btn btn-primary sm" id="editPickArt"><svg class="i"><use href="#i-image"/></svg>Rasm tanlash</button>
-          <button class="btn btn-ghost sm" id="editFindArt"><svg class="i"><use href="#i-globe"/></svg>Internetdan topish</button>
-          <button class="btn btn-ghost sm" id="editRemoveArt">Olib tashlash</button>
+          <button class="eab" id="editPickArt"><span class="eab-ic"><svg class="i"><use href="#i-image"/></svg></span><span class="desktop-only">Rasm tanlash</span><span class="mobile-only">Galereya</span></button>
+          <button class="eab" id="editFindArt"><span class="eab-ic"><svg class="i"><use href="#i-globe"/></svg></span><span class="desktop-only">Internetdan topish</span><span class="mobile-only">Internet</span></button>
+          <button class="eab danger" id="editRemoveArt"><span class="eab-ic"><svg class="i"><use href="#i-trash"/></svg></span><span class="desktop-only">Olib tashlash</span><span class="mobile-only">O'chirish</span></button>
         </div>
       </div>
       <div class="edit-fields">
@@ -425,14 +426,15 @@
     <div id="coverPick" class="cover-pick hidden">
       <div class="cp-head">
         <span id="coverNote"></span>
-        <button class="btn btn-ghost sm" id="coverGoogle"><svg class="i"><use href="#i-search"/></svg>Google rasmlar</button>
+        <button class="btn btn-ghost sm" id="coverGoogle"><svg class="i"><use href="#i-search"/></svg>Google</button>
       </div>
       <div id="coverGrid" class="cp-grid"></div>
-      <p class="edit-note">Spotify, Google yoki boshqa saytdagi rasmni nusxalab shu oynada Ctrl+V bosing yoki rasm faylini shu yerga tashlang.</p>
+      <p class="edit-note desktop-only">Spotify, Google yoki boshqa saytdagi rasmni nusxalab shu oynada Ctrl+V bosing yoki rasm faylini shu yerga tashlang.</p>
+      <p class="edit-note mobile-only">Kerakli rasm topilmasa: Google'dan rasmni telefonga saqlang, keyin «Galereya» orqali tanlang.</p>
     </div>
-    <div class="modal-actions">
+    <div class="modal-actions sheet-actions">
       <button class="btn btn-ghost" id="editCancel">Bekor qilish</button>
-      <button class="btn btn-primary" id="editSave">Saqlash</button>
+      <button class="btn btn-primary" id="editSave"><svg class="i"><use href="#i-check"/></svg>Saqlash</button>
     </div>
   </div>
   <input type="file" id="artInput" accept="image/*" hidden>
